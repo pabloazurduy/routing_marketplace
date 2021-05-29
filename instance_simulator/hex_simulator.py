@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import json
 import random
 from copy import deepcopy
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import h3
 import numpy as np
@@ -90,15 +90,49 @@ def get_random_inner_point(hex_key:str)->Point:
         random_point = Point(random.uniform(minx, maxx), random.uniform(miny, maxy))
         if hex_polygon.contains(random_point):
             return random_point
+
+DEM_WEIGHTS = {'very_high':3.5,
+               'high':3,
+               'mid':2,
+               'low':1
+                }
+def hex_smother_demand_mapper(hex_list:List[str],  # all the hexacluster list 
+                              num_hex_with_high_demand: int = 10, # list with higher demand hex cluster 
+                              dem_weights:Dict[str,float] = DEM_WEIGHTS # demand weights
+                              ) -> Dict[str:float]: # dict with hex:probability
     
+    # cast number of high demand hex                                 
+    num_hex_with_high_demand = max(num_hex_with_high_demand, len(hex_list))
+
+    very_high_demand = random.sample(hex_list, k= num_hex_with_high_demand)
+    high_demand_inc = []
+    mid_demand_inc = []
+
+    # smother ring 
+    for hex in very_high_demand:
+        high_demand_inc.append(list(h3.k_ring(hex, k=1)))
+        mid_demand_inc.append(list(h3.k_ring(hex, k=2)))
+    
+    dem_mapper = {}
+    for hex in hex_list:
+        if hex in very_high_demand:
+            dem_mapper[hex] = dem_weights['very_high']
+        elif hex in high_demand_inc:
+            dem_mapper[hex] = dem_weights['high']
+        elif hex in mid_demand_inc:
+            dem_mapper[hex] = dem_weights['mid']
+        else:
+            dem_mapper[hex] = dem_weights['low']
+    return dem_mapper
+
 def get_random_time(lambda_value:float)-> float:
     return np.random.exponential(lambda_value)
 
 def create_smother_demand_mapper(hex_cluster:List[str], 
-                                         day_intervals:[str, dict] = 'default',
-                                         hex_with_high_demand:[str, dict] = 'default',
-                                         cat_lambda_map:[str, dict] = 'default',
-                                         ) -> Dict[Tuple[str, int], float] :
+                                 day_intervals:[str, dict] = 'default',
+                                 hex_with_high_demand:[str, dict] = 'default',
+                                 cat_lambda_map:[str, dict] = 'default',
+                                 ) -> Dict[Tuple[str, int], float] :
     if day_intervals == 'default':
         day_intervals_dict = {'morning': [7,10], 
                               'mid_morning':[11,15],
