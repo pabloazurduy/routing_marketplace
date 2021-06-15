@@ -15,6 +15,10 @@ python == 3.8
 pip install requirements.txt 
 
 
+## Testing
+
+    python -m unittest discover -s test -p '*_test.py'
+
 
 ## references: 
 - geojson: https://github.com/jlhonora/geo
