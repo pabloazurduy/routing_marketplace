@@ -16,116 +16,81 @@ instance_df['req_date'] = np.where(~instance_df['is_warehouse'],
 
 opt_instance = OptInstance.load_instance(instance_df)
 
+# =========================== #
+# ===  optimization model === #
+# =========================== #
+model = mip.Model(name = 'clustering', sense = mip.MINIMIZE)
 
-# optimization model 
+# Instance Parameters 
+n_clusters = 25 # max number of clusters ? TODO: there should be a Z* equivalent way of modeling this problem 
+clusters = range(n_clusters)
 
-model = mip.Model(name = 'clustering')
-
-"""
 # var declaration
 y = {} # cluster variables
-for i,j in it.product(opt_isntance.nodes):
-    # declarate path variables 
-    if i != j : 
-        x[(i,j,k)] = model.add_var(var_type = mip.BINARY , 
-                                name = f'path_{i}_{j}_{k}')
+for node,c in it.product(opt_instance.nodes, clusters): # in cluster var
+    y[(node.sid,c)] = model.add_var(var_type = mip.BINARY , name = f'cluster_{node.sid}_{c}')
 
-y = {}    
-for i,k in itertools.product(nodes,trucks):
-    # declarate path variables 
-    y[(i,k)] = model.add_var(var_type = mip.CONTINUOUS , 
-                            name = f'asignation_{i}_{k}')
+# features 
+ft_size = {}
+ft_size_drops = {}
+ft_size_pickups = {}
+ft_has_geo = {}
+ft_size_geo = {}
+# TODO: ft_dist_appx ={}
 
-u = {} # path length variable 
-for i,k in itertools.product(nodes,trucks):
-    u[(i,k)] = model.add_var(var_type = mip.INTEGER , 
-                            name = f'order_{i}_{k}')
+for c in clusters:
+    ft_size[c] =         model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_c{c}', lb=0)
+    ft_size_drops[c] =   model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_drops_c{c}', lb=0)
+    ft_size_pickups[c] = model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_pickups_c{c}', lb=0)
+    ft_size_geo[c] =     model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_geos_c{c}', lb=0)
+    for geo in opt_instance.comunas:
+        ft_has_geo[(c,geo.id)] = model.add_var(var_type = mip.BINARY , name = f'ft_has_geo_c{c}_{geo.name}', lb=0)
 
 
 # ======================== #
 # ===== constraints ====== #
 # ======================== #
 
-# 0. end node codification  
-for k in trucks:
-    model.add_constr(mip.xsum([x[(origin[k],j,k)] for j in nodes if j!= origin[k]]) <= 1, name=f'origin_out_cod_{k}' ) 
+# Cluster Constraint
+for node in opt_instance.drops:
+    # 0. demand satisfy
+    model.add_constr(mip.xsum([y[(node.sid, c)] for c in clusters]) ==  1, name=f'cluster_fill_{node.sid}') # TODO SOS ? 
+    # 1. pair drop,warehouse 
+    model.add_constr(y[(node.sid, c)] == y[(node.warehouse_sid, c)], name=f'pair_drop_warehouse_{node.sid}_{node.warehouse_sid}') 
 
-# 1. flow conservation
-for i,k in itertools.product(nodes,trucks):
-    if i != origin[k]:
-        model.add_constr(mip.xsum([x[(j,i,k)] for j in nodes if j!=i ]) == # lo que entra
-                        mip.xsum([x[(i,j,k)] for j in nodes if j!=i ]) , # lo que sale
-                        name = f'flow_conservation_{i}_{k}' ) 
+# Size Features
+for c in clusters:
+    # 2. cod ft_size
+    model.add_constr(ft_size[c] == mip.xsum([y[(node.sid, c)] for node in opt_instance.nodes]), name=f'cod_ft_size_c{c}') 
+    # 3. cod ft_size_drops
+    model.add_constr(ft_size_drops[c] == mip.xsum([y[(node.sid, c)] for node in opt_instance.drops]), name=f'cod_ft_size_drops_c{c}') 
+    # 4. cod ft_size_pickups
+    model.add_constr(ft_size_pickups[c] == mip.xsum([y[(node.sid, c)] for node in opt_instance.warehouses]), name=f'cod_ft_size_pickups_c{c}') 
 
-# 2. y codification 
-for i,k in itertools.product(nodes,trucks):
-    model.add_constr(y[(i,k)] == mip.xsum([x[(j,i,k)] for j in nodes if j!=i]) , name=f'y[{i}{k}]_cod') 
+# Geo Codifications
+M1 =  len(opt_instance.nodes)
+for c,geo in it.product(clusters,opt_instance.comunas):
+    # 5. cod min ft_has_geo 
+    model.add_constr(M1 * ft_has_geo[(c,geo.id)] >= mip.xsum([y[node.sid,c] for node in opt_instance.drops if node.comuna_id == geo.id]), name=f'cod_ft_has_geo_min_{c}_{geo.id}') 
+    # 6. cod max ft_has_geo 
+    model.add_constr(ft_has_geo[(c,geo.id)] <= mip.xsum([y[node.sid,c] for node in opt_instance.drops if node.comuna_id == geo.id]), name=f'cod_ft_has_geo_max_{c}_{geo.id}') 
 
-# 3. demand fulfillment
-for i in nodes:
-    if i not in origin.values(): # is not an origin node
-        model.add_constr(mip.xsum([ y[(i,k)] for k in trucks]) == 1 , name=f'y[{i}{k}]_cod') 
-
-
-# 4. subtour elimination 
-graph_len = len(nodes)
-for k in trucks:
-    for i,j in itertools.product(nodes,nodes):
-        if i != j and (i != origin[k] and j!= origin[k]): # remove origin 
-            model.add_constr(u[(i,k)] - u[(j,k)] + 1  <= graph_len*(1- x[(i,j,k)]) , name=f'subtour_constraint_{i}_{j}_{k}')
-    
-    model.add_constr(u[(origin[k],k)] == 1 , name=f'subtour_constraint_origin_{k}')
-    
-    for i in nodes:
-        if i != origin[k] :
-            model.add_constr(u[(i,k)] >=2  , name=f'subtour_constraint_lowerbound_{i}')
-            model.add_constr(u[(i,k)] <= graph_len -1, name=f'subtour_constraint_upperbound_{i}')
-            
-
-# ============================ #
-# ==== model declaration ===== #
-# ============================ #
+for c in clusters:
+    # 7. cod ft_size_geos 
+    model.add_constr(ft_size_geo[c] == mip.xsum([ft_has_geo[(c,geo.id)] for geo in opt_instance.comunas]), name=f'cod_ft_size_geos_{c}_{geo.id}') 
 
 # objective function
-if objective_function == 'min_distance':
-    model.objective = mip.xsum([x[key]*vrp_instance.cost(key[0],key[1],key[2]) for key in x.keys()])
+beta_size = -1
+beta_size_drops = -1
+beta_size_pickups = -1
+beta_size_geo = -4
 
-elif objective_function == 'lowest_pos':
-    model.objective = mip.xsum([u[key] for key in u.keys()])
+model.objective = mip.xsum([beta_size*ft_size[c] + 
+                            beta_size_drops*ft_size_drops[c] + 
+                            beta_size_pickups*ft_size_pickups[c] +
+                            beta_size_geo*ft_size_geo[c]
+                            for c in clusters])
 
-if objective_function == 'min_dist_max_len':
-    for key in u.keys():
-        model.add_constr(u[key] <= int(graph_len/len(trucks) *1.15) +1  , name='max_len')
-    model.objective = mip.xsum([x[key]*vrp_instance.cost(key[0],key[1],key[2]) for key in x.keys()])
-
-if objective_function == 'min_last_attended':
-    M = 10e6
-    t_len = {}
-    bin_l = {}
-    max_route = model.add_var(name='max_route', var_type = mip.CONTINUOUS)
-    
-    for k in trucks:
-        t_len[k] = model.add_var(name=f'route_len_{k}', var_type = mip.CONTINUOUS)
-        bin_l[k] = model.add_var(name=f'cod_route_max_{k}', var_type = mip.BINARY)
-
-        model.add_constr(t_len[k] == mip.xsum([ x[key] * vrp_instance.cost(key[0],key[1],k)  for key in x.keys() if key[2]==k ]), 
-                                name = f'route_len_{k}')
-
-        model.add_constr(max_route >= t_len[k], name=f'max_route_cod_lb_{k}')
-        model.add_constr(max_route <= t_len[k] + M * (1-bin_l[k]), name=f'max_route_cod_ub_{k}')
-
-    model.objective = max_route
-
-model.sens = mip.MINIMIZE
-
-# model tunning
-# cuts
-# -1  automatic, 0 disables completely, 
-# 1 (default) generates cutting planes in a moderate way,
-# 2 generates cutting planes aggressively  
-# 3 generates even more cutting planes
-model.cuts = 2 
-model.max_mip_gap = 0.005 # 0.5%
-model.max_seconds = 25*60 
+model.max_seconds = 60 * 25 # min 
 model.optimize()
-"""
+

@@ -8,3 +8,4 @@ Shapely==1.7.1
 six==1.16.0
 pydantic==1.8.2
 shapely==1.7.1
+mip==1.13.0

@@ -10,7 +10,7 @@ from shapely.geometry import shape, Point, Polygon
 # city meta classes 
 class Comuna(BaseModel):
     id: int
-    name_comuna: str
+    name: str
     provincia: str 
     area: float 
     polygon: Polygon
@@ -35,13 +35,13 @@ class City(BaseModel):
         
         comunas = {}
         for comuna_id, feature in enumerate(geojson['features']):
-            print(feature['properties']['NOM_COM'], comuna_id)
+            # print(feature['properties']['NOM_COM'], comuna_id)
             polygon = shape(feature['geometry'])
             comunas[comuna_id] =  Comuna(id = comuna_id,
-                                        name_comuna = feature['properties']['NOM_COM'],
-                                        provincia = feature['properties']['NOM_PROV'],
-                                        area = feature['properties']['SHAPE_Area'],
-                                        polygon = polygon)
+                                         name = feature['properties']['NOM_COM'],
+                                         provincia = feature['properties']['NOM_PROV'],
+                                         area = feature['properties']['SHAPE_Area'],
+                                         polygon = polygon)
 
         return cls(id=id, name_city = name_city, comunas=comunas)
     
@@ -64,17 +64,29 @@ class Warehouse(BaseModel):
     lat: float
     lng: float
     comuna_id: Optional[int]
-    
+
+    @property
+    def sid(self) -> str:
+        return 'w' + str(self.id)
+
 class Drop(BaseModel):
     id: int 
     lat: float
     lng: float
-    warehouse : Warehouse
+    warehouse_id : int
     store_id : int 
     req_date: date
     schedule_date: Optional[date]
     comuna_id: Optional[int]
 
+    @property
+    def sid(self)-> str:
+        return 'd' + str(self.id)
+    
+    @property
+    def warehouse_sid(self)-> str:
+        return 'w' + str(self.warehouse_id)
+    
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id', 'req_date']
 
@@ -82,6 +94,14 @@ class OptInstance(BaseModel):
     warehouses: List[Warehouse]
     drops: List[Drop]
     city: City
+    
+    @property
+    def nodes(self):
+        return self.drops + self.warehouses
+    
+    @property
+    def comunas(self) -> List[Comuna]:
+        return list(self.city.comunas.values())
 
     @classmethod
     def load_instance(cls, instance_df = pd.DataFrame):
@@ -117,7 +137,7 @@ class OptInstance(BaseModel):
             drop = Drop(id = d_id,
                         lat =drop_inst['lat'],
                         lng =drop_inst['lon'],
-                        warehouse = warehouses_dict[drop_inst['pickup_warehouse_id']],
+                        warehouse_id = drop_inst['pickup_warehouse_id'],
                         store_id = drop_inst['store_id'],
                         req_date = drop_inst['req_date'],
                         comuna_id = city_inst.get_comuna_id(drop_inst['lat'],drop_inst['lon'])
@@ -125,5 +145,3 @@ class OptInstance(BaseModel):
             drops.append(drop)
             
         return cls(warehouses = warehouses, drops= drops, city = city_inst)
-
-
