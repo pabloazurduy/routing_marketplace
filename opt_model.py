@@ -26,9 +26,17 @@ n_clusters = 25 # max number of clusters ? TODO: there should be a Z* equivalent
 clusters = range(n_clusters)
 
 # var declaration
-y = {} # cluster variables
+y = {} # cluster variables 
 for node,c in it.product(opt_instance.nodes, clusters): # in cluster var
     y[(node.sid,c)] = model.add_var(var_type = mip.BINARY , name = f'cluster_{node.sid}_{c}')
+    
+    #closest node var  
+    """TODO: remove 
+    # b = {} # closest node var
+    for node_j in opt_instance.nodes:
+        if node_j.sid != node.sid:
+            b[(c, node.sid, node_j.sid)] = model.add_var(var_type = mip.BINARY , name = f'closest_node_c{c}_osid{node.sid}_dsid{node_j.sid}')
+    """
 
 # features 
 ft_size = {}
@@ -36,17 +44,18 @@ ft_size_drops = {}
 ft_size_pickups = {}
 ft_has_geo = {}
 ft_size_geo = {}
-# TODO: ft_dist_appx ={}
+# ft_dist_appx ={}
 
 for c in clusters:
     ft_size[c] =         model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_c{c}', lb=0)
     ft_size_drops[c] =   model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_drops_c{c}', lb=0)
     ft_size_pickups[c] = model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_pickups_c{c}', lb=0)
     ft_size_geo[c] =     model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_geos_c{c}', lb=0)
+    # ft_distance_appx[c] =model.add_var(var_type = mip.CONTINUOUS , name = f'ft_distance_appx_c{c}', lb=0)
+    
     for geo in opt_instance.comunas:
-        ft_has_geo[(c,geo.id)] = model.add_var(var_type = mip.BINARY , name = f'ft_has_geo_c{c}_{geo.name}', lb=0)
-
-
+        ft_has_geo[(c,geo.id)] = model.add_var(var_type = mip.BINARY , name = f'ft_has_geo_c{c}_{geo.name}')
+    
 # ======================== #
 # ===== constraints ====== #
 # ======================== #
@@ -79,11 +88,27 @@ for c in clusters:
     # 7. cod ft_size_geos 
     model.add_constr(ft_size_geo[c] == mip.xsum([ft_has_geo[(c,geo.id)] for geo in opt_instance.comunas]), name=f'cod_ft_size_geos_{c}_{geo.id}') 
 
+# Cluster route distance proxy 
+"""TODO:remove 
+M2 = 100 # longest route km 
+for c, node_i, node_j in it.product(clusters, opt_instance.nodes, opt_instance.nodes):
+    if node_i.sid != node_j.sid:
+        d_ij = opt_instance.distance(node_i.sid, node_j.sid)
+        # 8. cod_max_distance_same_cluster_c
+        model.add_constr(ft_distance_appx[c] <= y[(node_i.sid, c)]*d_ij + M2*(1-y[(node_i.sid, c)]), name= f'cod_max_distance_same_cluster_c{c}_{node_i.sid}_{node_j.sid}') 
+        # 9 cod_min_distance_same_cluster_c
+        model.add_constr(ft_distance_appx[c] >= y[(node_i.sid, c)]*d_ij + M2*(1-y[(node_i.sid, c)]) - 2*M2*(1-b[(c, node_i.sid, node_j.sid)]), 
+                         name= f'cod_min_distance_same_cluster_c{c}_{node_i.sid}_{node_j.sid}') 
+
+for c, node_i in it.product(clusters, opt_instance.nodes): 
+    model.add_constr(mip.xsum([b[(c, node_i.sid, node_j.sid)] ==1 for node_j in opt_instance.nodes if node_i.sid != node_j.sid]), name=f'cod_closest_node_var_c{c}_{node_i.sid}') 
+"""
+
 # objective function
 beta_size = -1
 beta_size_drops = -1
 beta_size_pickups = -1
-beta_size_geo = -4
+beta_size_geo = -400
 
 model.objective = mip.xsum([beta_size*ft_size[c] + 
                             beta_size_drops*ft_size_drops[c] + 

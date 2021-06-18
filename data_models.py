@@ -78,7 +78,9 @@ class Warehouse(BaseModel):
     @property
     def sid(self) -> str:
         return 'w' + str(self.id)
-
+    @property
+    def point(self):
+        return Point(self.lng,self.lat)
 class Drop(BaseModel):
     id: int 
     lat: float
@@ -93,6 +95,10 @@ class Drop(BaseModel):
     def sid(self)-> str:
         return 'd' + str(self.id)
     
+    @property
+    def point(self):
+        return Point(self.lng,self.lat)
+
     @property
     def warehouse_sid(self)-> str:
         return 'w' + str(self.warehouse_id)
@@ -209,6 +215,16 @@ class OptInstance(BaseModel):
             return self.drops_dict[int(sid[1:])]
         else:
             return None
+    
+    def distance(self, sid_o:str, sid_d:str) -> float:
+        
+        # TODO optimize this based on a hashmap and 
+        # using preload objetcts no-on the fly transformations 
+
+        # return euclidian distance between two nodes (sid)
+        org_point = self.get_node_sid(sid_o).point
+        des_point = self.get_node_sid(sid_d).point
+        return org_point.distance(des_point)
     
     def plot(self, file_name='plot_map.html'):
         # get data 
