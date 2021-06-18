@@ -3,9 +3,13 @@
 import pandas as pd 
 from pydantic import BaseModel 
 from datetime import date 
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 import json
 from shapely.geometry import shape, Point, Polygon
+import geopandas
+from keplergl import KeplerGl
+from constants import KEPLER_CONFIG
+import mip
 
 # city meta classes 
 class Comuna(BaseModel):
@@ -57,6 +61,12 @@ class City(BaseModel):
             return None 
         else:
             return com_loc.id
+    
+    def to_gpd(self):
+        data = [geo.dict() for geo in self.comunas.values()]
+        geos_df = pd.DataFrame.from_records(data = data)
+        geos_df.rename(columns={'polygon':'geometry'}, inplace=True)
+        return  geopandas.GeoDataFrame(geos_df) 
 
 # instance classes 
 class Warehouse(BaseModel):
@@ -90,14 +100,48 @@ class Drop(BaseModel):
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id', 'req_date']
 
+class Solution(BaseModel):
+    y: Dict[Tuple,mip.Var]
+    features = Optional[List[Dict[Tuple,mip.Var]]]
+    class Config:
+        arbitrary_types_allowed = True
+
+    def clusters_df(self):
+        cluster_list = []
+        for tuple_key in self.y.keys():
+            if self.y[tuple_key].x == 1:
+                # if node in cluster
+                cluster_list.append({'node_sid': tuple_key[0],
+                                     'node_type': tuple_key[0][0],
+                                     'node_id':int(tuple_key[0][1:]),
+                                     'cluster':tuple_key[1] 
+                })
+            else:
+                pass
+        cluster_df = pd.DataFrame(cluster_list)
+        return cluster_df
+            
+
+
 class OptInstance(BaseModel):
-    warehouses: List[Warehouse]
-    drops: List[Drop]
+    warehouses_dict: Dict[int,Warehouse]
+    drops_dict: Dict[int,Drop]
     city: City
-    
+
+    solution: Optional[Solution] # name_variable: dict with variables
+
     @property
     def nodes(self):
-        return self.drops + self.warehouses
+        return list(self.drops_dict.values()) + list(self.warehouses_dict.values())
+
+    @property
+    def drops(self):
+        return list(self.drops_dict.values())
+
+    @property
+    def warehouses(self):
+        return list(self.warehouses_dict.values())
+
     
     @property
     def comunas(self) -> List[Comuna]:
@@ -121,27 +165,60 @@ class OptInstance(BaseModel):
         warehouses_list = instance_df[instance_df.is_warehouse].to_dict(orient='records')
         drops_list      = instance_df[~instance_df.is_warehouse].to_dict(orient='records')
         
-        warehouses = []
-        drops = []
+        
         warehouses_dict = {}
         for wh_inst in warehouses_list:
             wh_id = wh_inst['pickup_warehouse_id']
-            warehouses_dict[wh_id] = Warehouse(id = wh_id,
+            warehouses_dict[int(wh_id)] = Warehouse(id = wh_id,
                                                lat =wh_inst['lat'],
                                                lng =wh_inst['lon'],
                                                comuna_id =  city_inst.get_comuna_id(wh_inst['lat'], wh_inst['lon'])
                                                )
-        warehouses = list(warehouses_dict.values())
-        
+        drops_dict = {}
         for d_id, drop_inst in enumerate(drops_list):
-            drop = Drop(id = d_id,
-                        lat =drop_inst['lat'],
-                        lng =drop_inst['lon'],
-                        warehouse_id = drop_inst['pickup_warehouse_id'],
-                        store_id = drop_inst['store_id'],
-                        req_date = drop_inst['req_date'],
-                        comuna_id = city_inst.get_comuna_id(drop_inst['lat'],drop_inst['lon'])
-                        )
-            drops.append(drop)
+            drops_dict[int(d_id)] = Drop(id = d_id,
+                                    lat =drop_inst['lat'],
+                                    lng =drop_inst['lon'],
+                                    warehouse_id = drop_inst['pickup_warehouse_id'],
+                                    store_id = drop_inst['store_id'],
+                                    req_date = drop_inst['req_date'],
+                                    comuna_id = city_inst.get_comuna_id(drop_inst['lat'],drop_inst['lon'])
+                                    )
             
-        return cls(warehouses = warehouses, drops= drops, city = city_inst)
+        return cls(warehouses_dict = warehouses_dict, drops_dict= drops_dict, city = city_inst)
+    
+    def get_solution_df(self):
+        cluster_df = self.solution.clusters_df()
+        
+        node_list = []
+        for node_sid in cluster_df.node_sid.unique():
+            node_list.append({ 
+              'node_sid': node_sid,
+              'lat': self.get_node_sid(node_sid).lat,
+              'lng': self.get_node_sid(node_sid).lng,
+            })
+        node_df = pd.DataFrame(node_list)       
+        solution_df = pd.merge(left = cluster_df, right = node_df, 
+                                on='node_sid', how='left')
+        return solution_df
+    
+    def get_node_sid(self, sid:str):
+        if 'w' in sid:
+            return self.warehouses_dict[int(sid[1:])]
+        elif 'd' in sid:
+            return self.drops_dict[int(sid[1:])]
+        else:
+            return None
+    
+    def plot(self, file_name='plot_map.html'):
+        # get data 
+        comunas_layer_df = self.city.to_gpd()
+        solution_layer_df = self.get_solution_df()
+
+        # build map
+        out_map = KeplerGl(height=400, config=KEPLER_CONFIG)
+        # load data
+        out_map.add_data(data=comunas_layer_df, name='comunas')
+        out_map.add_data(data=solution_layer_df, name='solution')
+
+        out_map.save_to_html(file_name=file_name)

@@ -9,3 +9,6 @@ six==1.16.0
 pydantic==1.8.2
 shapely==1.7.1
 mip==1.13.0
+ipython==7.24.1
+# geopandas == 0.9.0 install via conda !
+keplergl==0.2.2

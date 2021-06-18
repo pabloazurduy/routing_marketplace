@@ -1,4 +1,4 @@
-from data_models import OptInstance
+from data_models import OptInstance, Solution
 from datetime import date
 import pandas as pd 
 import numpy as np
@@ -94,3 +94,13 @@ model.objective = mip.xsum([beta_size*ft_size[c] +
 model.max_seconds = 60 * 25 # min 
 model.optimize()
 
+solution_dict = { 'y':  y,  
+                  'ft_size' :  ft_size,
+                  'ft_size_drops' :  ft_size_drops,
+                  'ft_size_pickups' :  ft_size_pickups,
+                  'ft_has_geo' :  ft_has_geo,
+                  'ft_size_geo' :  ft_size_geo,
+                }
+
+opt_instance.solution = Solution(y = y)
+opt_instance.plot()
