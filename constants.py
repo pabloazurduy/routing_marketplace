@@ -13,8 +13,8 @@ KEPLER_CONFIG = {
           ],
           "type": "range",
           "value": [
-            23.13,
-            24
+            0,
+            0.94
           ],
           "enlarged": False,
           "plotType": "histogram",
@@ -126,9 +126,9 @@ KEPLER_CONFIG = {
             },
             "isVisible": True,
             "visConfig": {
-              "opacity": 0.03,
+              "opacity": 0,
               "strokeOpacity": 0.8,
-              "thickness": 0.5,
+              "thickness": 0.2,
               "strokeColor": [
                 221,
                 178,
@@ -277,10 +277,10 @@ KEPLER_CONFIG = {
     "mapState": {
       "bearing": 0,
       "dragRotate": False,
-      "latitude": -33.43778648721473,
-      "longitude": -70.64803009191557,
+      "latitude": -33.51461337577739,
+      "longitude": -70.71986753656525,
       "pitch": 0,
-      "zoom": 10.53681621264823,
+      "zoom": 10.026739494761067,
       "isSplit": False
     },
     "mapStyle": {
