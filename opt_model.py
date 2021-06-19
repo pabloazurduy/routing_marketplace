@@ -43,7 +43,7 @@ for c in clusters:
     ft_size_pickups[c] = model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_pickups_c{c}', lb=0)
     ft_size_geo[c] =     model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_geos_c{c}', lb=0)
     
-    for geo in opt_instance.comunas:
+    for geo in opt_instance.geos:
         ft_has_geo[(c,geo.id)] = model.add_var(var_type = mip.BINARY , name = f'ft_has_geo_c{c}_{geo.name}')
     
 # ======================== #
@@ -68,15 +68,15 @@ for c in clusters:
 
 # Geo Codifications
 M1 =  len(opt_instance.nodes)
-for c,geo in it.product(clusters,opt_instance.comunas):
+for c,geo in it.product(clusters,opt_instance.geos):
     # 5. cod min ft_has_geo 
-    model.add_constr(M1 * ft_has_geo[(c,geo.id)] >= mip.xsum([y[node.sid,c] for node in opt_instance.drops if node.comuna_id == geo.id]), name=f'cod_ft_has_geo_min_{c}_{geo.id}') 
+    model.add_constr(M1 * ft_has_geo[(c,geo.id)] >= mip.xsum([y[node.sid,c] for node in opt_instance.drops if node.geo_id == geo.id]), name=f'cod_ft_has_geo_min_{c}_{geo.id}') 
     # 6. cod max ft_has_geo 
-    model.add_constr(ft_has_geo[(c,geo.id)] <= mip.xsum([y[node.sid,c] for node in opt_instance.drops if node.comuna_id == geo.id]), name=f'cod_ft_has_geo_max_{c}_{geo.id}') 
+    model.add_constr(ft_has_geo[(c,geo.id)] <= mip.xsum([y[node.sid,c] for node in opt_instance.drops if node.geo_id == geo.id]), name=f'cod_ft_has_geo_max_{c}_{geo.id}') 
 
 for c in clusters:
     # 7. cod ft_size_geos 
-    model.add_constr(ft_size_geo[c] == mip.xsum([ft_has_geo[(c,geo.id)] for geo in opt_instance.comunas]), name=f'cod_ft_size_geos_{c}_{geo.id}') 
+    model.add_constr(ft_size_geo[c] == mip.xsum([ft_has_geo[(c,geo.id)] for geo in opt_instance.geos]), name=f'cod_ft_size_geos_{c}_{geo.id}') 
 
 
 # objective function
