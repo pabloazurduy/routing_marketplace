@@ -23,6 +23,17 @@ class Geo(BaseModel):
     def contains(self, lat:float, lng:float) -> bool:
         point = Point(lng,lat)
         return self.polygon.contains(point)
+    
+    def distance(self, other) -> float:
+        # hausdorff_distance:  longest distance        
+        # distance: shortest distance 
+        # representative_point: a point inside the object 
+        # centroid: centroid of the polygon    
+        # return self.polygon.hausdorff_distance(other.polygon)
+        self_centroid = self.polygon.centroid
+        other_centroid = other.polygon.centroid
+        return self_centroid.distance(other_centroid )
+
 
 class City(BaseModel):
     id: Optional[int]

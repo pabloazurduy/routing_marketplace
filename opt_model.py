@@ -29,19 +29,26 @@ clusters = range(n_clusters)
 y = {} # cluster variables 
 for node,c in it.product(opt_instance.nodes, clusters): # in cluster var
     y[(node.sid,c)] = model.add_var(var_type = mip.BINARY , name = f'cluster_{node.sid}_{c}')
-    
+
+z = {} # distance variables 
+for c,g1,g2 in it.product(clusters, opt_instance.geos, opt_instance.geos): 
+    if g1 != g2:
+        z[(c,g1.id,g2.id)] = model.add_var(var_type = mip.BINARY , name = f'inter_geo_{c}_{g1.id}_{g2.id}')
+
 # features 
 ft_size = {}
 ft_size_drops = {}
 ft_size_pickups = {}
 ft_has_geo = {}
 ft_size_geo = {}
+ft_inter_geo_dist = {}
 
 for c in clusters:
-    ft_size[c] =         model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_c{c}', lb=0)
-    ft_size_drops[c] =   model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_drops_c{c}', lb=0)
-    ft_size_pickups[c] = model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_pickups_c{c}', lb=0)
-    ft_size_geo[c] =     model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_geos_c{c}', lb=0)
+    ft_size[c] =           model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_c{c}', lb=0)
+    ft_size_drops[c] =     model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_drops_c{c}', lb=0)
+    ft_size_pickups[c] =   model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_pickups_c{c}', lb=0)
+    ft_size_geo[c] =       model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_geos_c{c}', lb=0)
+    ft_inter_geo_dist[c] = model.add_var(var_type = mip.CONTINUOUS , name = f'ft_inter_geo_dist_c{c}', lb=0)
     
     for geo in opt_instance.geos:
         ft_has_geo[(c,geo.id)] = model.add_var(var_type = mip.BINARY , name = f'ft_has_geo_c{c}_{geo.name}')
@@ -78,20 +85,38 @@ for c in clusters:
     # 7. cod ft_size_geos 
     model.add_constr(ft_size_geo[c] == mip.xsum([ft_has_geo[(c,geo.id)] for geo in opt_instance.geos]), name=f'cod_ft_size_geos_{c}_{geo.id}') 
 
+# Inter Geo Codification
+for c,g1,g2 in it.product(clusters, opt_instance.geos, opt_instance.geos): 
+    if g1 != g2:
+        # 8. codification z min has_geo_g1 
+        model.add_constr(z[(c,g1.id,g2.id)] <= ft_has_geo[(c,g1.id)], name=f'cod_z_min_bound_g1_{c}_{g1.id}_{g2.id}') # this formulation has more constraints than the sum_g2 <= ..
+        # 9. codification z min has_geo_g2 
+        model.add_constr(z[(c,g1.id,g2.id)] <= ft_has_geo[(c,g2.id)], name=f'cod_z_min_bound_g2_{c}_{g1.id}_{g2.id}') 
+        # 10. codification z up bound  
+        model.add_constr(z[(c,g1.id,g2.id)] >= ft_has_geo[(c,g1.id)] + ft_has_geo[(c,g2.id)] -1  , name=f'cod_z_max_bound_{c}_{g1.id}_{g2.id}') 
+
+for c in clusters:
+    # 7. cod ft_size_geos 
+    model.add_constr(ft_inter_geo_dist[c] == mip.xsum([z[(c,g1.id,g2.id)] * g1.distance(g2) for g1,g2 in it.product(opt_instance.geos,opt_instance.geos) if g1!=g2 ]),
+                     name=f'cod_ft_size_geos_{c}_{geo.id}') 
+
 
 # objective function
 beta_size = -1
 beta_size_drops = -1
 beta_size_pickups = -1
 beta_size_geo = -4
+beta_ft_inter_geo_dist = -8
 
 model.objective = mip.xsum([beta_size*ft_size[c] + 
                             beta_size_drops*ft_size_drops[c] + 
                             beta_size_pickups*ft_size_pickups[c] +
-                            beta_size_geo*ft_size_geo[c]
+                            beta_size_geo*ft_size_geo[c] + 
+                            beta_ft_inter_geo_dist*ft_inter_geo_dist[c] 
                             for c in clusters])
 
 model.max_seconds = 60 * 25 # min 
+print('optimization starting')
 model.optimize()
 
 solution_dict = { 'y':  y,  
@@ -101,6 +126,9 @@ solution_dict = { 'y':  y,
                   'ft_has_geo' :  ft_has_geo,
                   'ft_size_geo' :  ft_size_geo,
                 }
+
+for c in clusters:
+    print(f'{ft_inter_geo_dist[c] = }')
 
 opt_instance.solution = Solution(y = y)
 opt_instance.plot()
