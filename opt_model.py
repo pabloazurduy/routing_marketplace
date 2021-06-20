@@ -31,6 +31,9 @@ for node,c in it.product(opt_instance.nodes, clusters): # in cluster var
     y[(node.sid,c)] = model.add_var(var_type = mip.BINARY , name = f'cluster_{node.sid}_{c}')
 
 z = {} # distance variables 
+for c,(g1,g2) in it.product(clusters, it.combinations(opt_instance.geos, 2)): # unique combinations  
+    z[(c,g1.id,g2.id)] = model.add_var(var_type = mip.BINARY , name = f'inter_geo_{c}_{g1.id}_{g2.id}')
+
 for c,g1,g2 in it.product(clusters, opt_instance.geos, opt_instance.geos): 
     if g1 != g2:
         z[(c,g1.id,g2.id)] = model.add_var(var_type = mip.BINARY , name = f'inter_geo_{c}_{g1.id}_{g2.id}')
@@ -86,19 +89,18 @@ for c in clusters:
     model.add_constr(ft_size_geo[c] == mip.xsum([ft_has_geo[(c,geo.id)] for geo in opt_instance.geos]), name=f'cod_ft_size_geos_{c}_{geo.id}') 
 
 # Inter Geo Codification
-for c,g1,g2 in it.product(clusters, opt_instance.geos, opt_instance.geos): 
-    if g1 != g2:
-        # 8. codification z min has_geo_g1 
-        model.add_constr(z[(c,g1.id,g2.id)] <= ft_has_geo[(c,g1.id)], name=f'cod_z_min_bound_g1_{c}_{g1.id}_{g2.id}') # this formulation has more constraints than the sum_g2 <= ..
-        # 9. codification z min has_geo_g2 
-        model.add_constr(z[(c,g1.id,g2.id)] <= ft_has_geo[(c,g2.id)], name=f'cod_z_min_bound_g2_{c}_{g1.id}_{g2.id}') 
-        # 10. codification z up bound  
-        model.add_constr(z[(c,g1.id,g2.id)] >= ft_has_geo[(c,g1.id)] + ft_has_geo[(c,g2.id)] -1  , name=f'cod_z_max_bound_{c}_{g1.id}_{g2.id}') 
+for (c,g1,g2) in z.keys():
+    # 8. codification z min has_geo_g1 
+    model.add_constr(z[(c,g1,g2)] <= ft_has_geo[(c,g1)], name=f'cod_z_min_bound_g1_{c}_{g1}_{g2}') # this formulation has more constraints than the sum_g2 <= ..
+    # 9. codification z min has_geo_g2 
+    model.add_constr(z[(c,g1,g2)] <= ft_has_geo[(c,g2)], name=f'cod_z_min_bound_g2_{c}_{g1}_{g2}') 
+    # 10. codification z up bound  
+    model.add_constr(z[(c,g1,g2)] >= ft_has_geo[(c,g1)] + ft_has_geo[(c,g2)] -1  , name=f'cod_z_max_bound_{c}_{g1}_{g2}') 
 
 for c in clusters:
-    # 7. cod ft_size_geos 
-    model.add_constr(ft_inter_geo_dist[c] == mip.xsum([z[(c,g1.id,g2.id)] * g1.distance(g2) for g1,g2 in it.product(opt_instance.geos,opt_instance.geos) if g1!=g2 ]),
-                     name=f'cod_ft_size_geos_{c}_{geo.id}') 
+    # 7. cod ft_inter_geo_dist 
+    model.add_constr(ft_inter_geo_dist[c] == mip.xsum([z[(c,g1.id,g2.id)] * g1.distance(g2) for g1,g2 in it.combinations(opt_instance.geos,2)]),
+                     name=f'cod_ft_inter_geo_dist{c}') 
 
 
 # objective function
@@ -115,7 +117,7 @@ model.objective = mip.xsum([beta_size*ft_size[c] +
                             beta_ft_inter_geo_dist*ft_inter_geo_dist[c] 
                             for c in clusters])
 
-model.max_seconds = 60 * 25 # min 
+model.max_seconds = 60 * 10 # min 
 print('optimization starting')
 model.optimize()
 
@@ -128,7 +130,7 @@ solution_dict = { 'y':  y,
                 }
 
 for c in clusters:
-    print(f'{ft_inter_geo_dist[c] = }')
+    print(f'{ft_inter_geo_dist[c].x = }')
 
 opt_instance.solution = Solution(y = y)
 opt_instance.plot()
