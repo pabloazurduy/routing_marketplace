@@ -5,16 +5,31 @@ KEPLER_CONFIG = {
       "filters": [
         {
           "dataId": [
-            "solution"
+            "cluster"
           ],
-          "id": "0exr7wcp",
+          "id": "3sfs2aq97",
+          "name": [
+            "node_type"
+          ],
+          "type": "multiSelect",
+          "value": [],
+          "enlarged": False,
+          "plotType": "histogram",
+          "animationWindow": "free",
+          "yAxis": None
+        },
+        {
+          "dataId": [
+            "cluster"
+          ],
+          "id": "qetpbicvs",
           "name": [
             "cluster"
           ],
           "type": "range",
           "value": [
             0,
-            0.94
+            24
           ],
           "enlarged": False,
           "plotType": "histogram",
@@ -24,15 +39,116 @@ KEPLER_CONFIG = {
       ],
       "layers": [
         {
-          "id": "6bamisl",
+          "id": "bcw7eaq",
+          "type": "geojson",
+          "config": {
+            "dataId": "geos",
+            "label": "geos",
+            "color": [
+              255,
+              254,
+              230
+            ],
+            "columns": {
+              "geojson": "geometry"
+            },
+            "isVisible": True,
+            "visConfig": {
+              "opacity": 0.01,
+              "strokeOpacity": 0.8,
+              "thickness": 0.2,
+              "strokeColor": [
+                221,
+                178,
+                124
+              ],
+              "colorRange": {
+                "name": "Global Warming",
+                "type": "sequential",
+                "category": "Uber",
+                "colors": [
+                  "#5A1846",
+                  "#900C3F",
+                  "#C70039",
+                  "#E3611C",
+                  "#F1920E",
+                  "#FFC300"
+                ]
+              },
+              "strokeColorRange": {
+                "name": "Global Warming",
+                "type": "sequential",
+                "category": "Uber",
+                "colors": [
+                  "#5A1846",
+                  "#900C3F",
+                  "#C70039",
+                  "#E3611C",
+                  "#F1920E",
+                  "#FFC300"
+                ]
+              },
+              "radius": 10,
+              "sizeRange": [
+                0,
+                10
+              ],
+              "radiusRange": [
+                0,
+                50
+              ],
+              "heightRange": [
+                0,
+                500
+              ],
+              "elevationScale": 5,
+              "stroked": True,
+              "filled": False,
+              "enable3d": False,
+              "wireframe": False
+            },
+            "hidden": False,
+            "textLabel": [
+              {
+                "field": None,
+                "color": [
+                  255,
+                  255,
+                  255
+                ],
+                "size": 18,
+                "offset": [
+                  0,
+                  0
+                ],
+                "anchor": "start",
+                "alignment": "center"
+              }
+            ]
+          },
+          "visualChannels": {
+            "colorField": None,
+            "colorScale": "quantile",
+            "sizeField": None,
+            "sizeScale": "linear",
+            "strokeColorField": None,
+            "strokeColorScale": "quantile",
+            "heightField": None,
+            "heightScale": "linear",
+            "radiusField": None,
+            "radiusScale": "linear"
+          }
+        },
+        {
+          "id": "ugn6rg2",
           "type": "point",
           "config": {
-            "dataId": "solution",
-            "label": "solution",
+            "dataId": "cluster",
+            "label": "Point",
             "color": [
-              137,
-              218,
-              193
+              136,
+              87,
+              44
             ],
             "columns": {
               "lat": "lat",
@@ -48,16 +164,16 @@ KEPLER_CONFIG = {
               "thickness": 2,
               "strokeColor": None,
               "colorRange": {
-                "name": "ColorBrewer Set1-6",
+                "name": "ColorBrewer Set2-6",
                 "type": "qualitative",
                 "category": "ColorBrewer",
                 "colors": [
-                  "#e41a1c",
-                  "#377eb8",
-                  "#4daf4a",
-                  "#984ea3",
-                  "#ff7f00",
-                  "#ffff33"
+                  "#66c2a5",
+                  "#fc8d62",
+                  "#8da0cb",
+                  "#e78ac3",
+                  "#a6d854",
+                  "#ffd92f"
                 ]
               },
               "strokeColorRange": {
@@ -111,29 +227,25 @@ KEPLER_CONFIG = {
           }
         },
         {
-          "id": "redj02g",
+          "id": "831siew",
           "type": "geojson",
           "config": {
-            "dataId": "comunas",
-            "label": "comunas",
+            "dataId": "inter_geo",
+            "label": "inter_geo",
             "color": [
-              16,
-              129,
-              136
+              255,
+              153,
+              31
             ],
             "columns": {
-              "geojson": "geometry"
+              "geojson": "shape"
             },
-            "isVisible": True,
+            "isVisible": False,
             "visConfig": {
-              "opacity": 0,
+              "opacity": 0.8,
               "strokeOpacity": 0.8,
-              "thickness": 0.2,
-              "strokeColor": [
-                221,
-                178,
-                124
-              ],
+              "thickness": 0.5,
+              "strokeColor": None,
               "colorRange": {
                 "name": "Global Warming",
                 "type": "sequential",
@@ -148,16 +260,16 @@ KEPLER_CONFIG = {
                 ]
               },
               "strokeColorRange": {
-                "name": "Global Warming",
-                "type": "sequential",
-                "category": "Uber",
+                "name": "ColorBrewer Set2-6",
+                "type": "qualitative",
+                "category": "ColorBrewer",
                 "colors": [
-                  "#5A1846",
-                  "#900C3F",
-                  "#C70039",
-                  "#E3611C",
-                  "#F1920E",
-                  "#FFC300"
+                  "#66c2a5",
+                  "#fc8d62",
+                  "#8da0cb",
+                  "#e78ac3",
+                  "#a6d854",
+                  "#ffd92f"
                 ]
               },
               "radius": 10,
@@ -175,7 +287,7 @@ KEPLER_CONFIG = {
               ],
               "elevationScale": 5,
               "stroked": True,
-              "filled": True,
+              "filled": False,
               "enable3d": False,
               "wireframe": False
             },
@@ -203,7 +315,10 @@ KEPLER_CONFIG = {
             "colorScale": "quantile",
             "sizeField": None,
             "sizeScale": "linear",
-            "strokeColorField": None,
+            "strokeColorField": {
+              "name": "cluster",
+              "type": "integer"
+            },
             "strokeColorScale": "quantile",
             "heightField": None,
             "heightScale": "linear",
@@ -215,7 +330,7 @@ KEPLER_CONFIG = {
       "interactionConfig": {
         "tooltip": {
           "fieldsToShow": {
-            "comunas": [
+            "geos": [
               {
                 "name": "id",
                 "format": None
@@ -225,15 +340,11 @@ KEPLER_CONFIG = {
                 "format": None
               },
               {
-                "name": "provincia",
-                "format": None
-              },
-              {
                 "name": "area",
                 "format": None
               }
             ],
-            "solution": [
+            "cluster": [
               {
                 "name": "node_sid",
                 "format": None
@@ -248,6 +359,24 @@ KEPLER_CONFIG = {
               },
               {
                 "name": "cluster",
+                "format": None
+              },
+              {
+                "name": "geo_id",
+                "format": None
+              }
+            ],
+            "inter_geo": [
+              {
+                "name": "cluster",
+                "format": None
+              },
+              {
+                "name": "geo_i",
+                "format": None
+              },
+              {
+                "name": "geo_j",
                 "format": None
               }
             ]
@@ -277,10 +406,10 @@ KEPLER_CONFIG = {
     "mapState": {
       "bearing": 0,
       "dragRotate": False,
-      "latitude": -33.51461337577739,
-      "longitude": -70.71986753656525,
+      "latitude": -33.49753419273629,
+      "longitude": -70.77098329764567,
       "pitch": 0,
-      "zoom": 10.026739494761067,
+      "zoom": 9.973998208213096,
       "isSplit": False
     },
     "mapStyle": {

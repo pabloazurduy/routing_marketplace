@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from datetime import date 
 from typing import List, Optional, Dict, Tuple, Union
 import json
-from shapely.geometry import shape, Point, Polygon
+from shapely.geometry import shape, Point, Polygon, LineString
 import geopandas
 from keplergl import KeplerGl
 from constants import KEPLER_CONFIG
@@ -17,8 +17,10 @@ class Geo(BaseModel):
     name: Optional[str]
     polygon: Polygon
     area: Optional[float]
-    class Config:
-        arbitrary_types_allowed = True
+
+    @property
+    def centroid(self):
+        return self.polygon.centroid
 
     def contains(self, lat:float, lng:float) -> bool:
         point = Point(lng,lat)
@@ -33,6 +35,9 @@ class Geo(BaseModel):
         self_centroid = self.polygon.centroid
         other_centroid = other.polygon.centroid
         return self_centroid.distance(other_centroid )
+    
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class City(BaseModel):
@@ -115,6 +120,7 @@ INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse',
 
 class Solution(BaseModel):
     y: Dict[Tuple,mip.Var]
+    z: Dict[Tuple,mip.Var]
     features = Optional[List[Dict[Tuple,mip.Var]]]
     class Config:
         arbitrary_types_allowed = True
@@ -133,8 +139,17 @@ class Solution(BaseModel):
                 pass
         cluster_df = pd.DataFrame(cluster_list)
         return cluster_df
-            
-
+    
+    def arcs_df(self):
+        arcs_list = []
+        for tuple_key in self.z.keys():
+            if self.z[tuple_key].x == 1:
+                arcs_list.append({'cluster':tuple_key[0],
+                                  'geo_i': tuple_key[1],
+                                  'geo_j':tuple_key[2]
+                })                
+        arcs_df = pd.DataFrame(arcs_list)
+        return arcs_df
 
 class OptInstance(BaseModel):
     warehouses_dict: Dict[int,Warehouse]
@@ -200,21 +215,35 @@ class OptInstance(BaseModel):
             
         return cls(warehouses_dict = warehouses_dict, drops_dict= drops_dict, city = city_inst)
     
-    def get_solution_df(self):
+    def get_cluster_df(self):
         cluster_df = self.solution.clusters_df()
         
         node_list = []
         for node_sid in cluster_df.node_sid.unique():
+            node = self.get_node_sid(node_sid)
             node_list.append({ 
               'node_sid': node_sid,
-              'lat': self.get_node_sid(node_sid).lat,
-              'lng': self.get_node_sid(node_sid).lng,
+              'lat': node.lat,
+              'lng': node.lng,
+              'geo_id': node.geo_id,
+              'warehouse': node.warehouse_id if type(node)==Drop else None,
             })
         node_df = pd.DataFrame(node_list)       
-        solution_df = pd.merge(left = cluster_df, right = node_df, 
+        cluster_df = pd.merge(left = cluster_df, right = node_df, 
                                 on='node_sid', how='left')
-        return solution_df
+        return cluster_df
     
+    def get_inter_geo_df(self):
+        arc_df = self.solution.arcs_df()
+
+        arcs_shapes = []
+        for arc in arc_df.itertuples():
+            geo_i = self.geos[arc.geo_i]
+            geo_j =  self.geos[arc.geo_j]
+            arcs_shapes.append(LineString([geo_i.centroid, geo_j.centroid]).wkt)
+        arc_df['shape'] = arcs_shapes
+        return arc_df
+
     def get_node_sid(self, sid:str):
         if 'w' in sid:
             return self.warehouses_dict[int(sid[1:])]
@@ -236,12 +265,14 @@ class OptInstance(BaseModel):
     def plot(self, file_name='plot_map.html'):
         # get data 
         geos_layer_df = self.city.to_gpd()
-        solution_layer_df = self.get_solution_df()
+        cluster_layer_df = self.get_cluster_df()
+        inter_geo_df = self.get_inter_geo_df()
 
         # build map
         out_map = KeplerGl(height=400, config=KEPLER_CONFIG)
         # load data
         out_map.add_data(data=geos_layer_df, name='geos')
-        out_map.add_data(data=solution_layer_df, name='solution')
+        out_map.add_data(data=cluster_layer_df, name='cluster')
+        out_map.add_data(data=inter_geo_df, name='inter_geo')
 
         out_map.save_to_html(file_name=file_name)
