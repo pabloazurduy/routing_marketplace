@@ -1,5 +1,6 @@
 # Data Models + Utilities
 
+from numpy import product
 import pandas as pd 
 from pydantic import BaseModel 
 from datetime import date 
@@ -10,6 +11,8 @@ import geopandas
 from keplergl import KeplerGl
 from constants import KEPLER_CONFIG
 import mip
+import itertools as it
+from sklearn.cluster import KMeans
 
 # city meta classes 
 class Geo(BaseModel):
@@ -73,6 +76,9 @@ class City(BaseModel):
             return None 
         else:
             return geo_loc.id
+    
+    def remove_geo(self, geo_id:str):
+        del self.geos[geo_id]
     
     def to_gpd(self):
         data = [geo.dict() for geo in self.geos.values()]
@@ -170,6 +176,13 @@ class OptInstance(BaseModel):
     def warehouses(self):
         return list(self.warehouses_dict.values())
 
+    @property
+    def drops_df(self):
+        return pd.DataFrame([drop.dict() for drop in self.drops])
+    
+    @property
+    def warehouses_df(self):
+        return pd.DataFrame([wh.dict() for wh in self.warehouses])
     
     @property
     def geos(self) -> List[Geo]:
@@ -193,15 +206,15 @@ class OptInstance(BaseModel):
         warehouses_list = instance_df[instance_df.is_warehouse].to_dict(orient='records')
         drops_list      = instance_df[~instance_df.is_warehouse].to_dict(orient='records')
         
-        
         warehouses_dict = {}
         for wh_inst in warehouses_list:
             wh_id = wh_inst['pickup_warehouse_id']
             warehouses_dict[int(wh_id)] = Warehouse(id = wh_id,
-                                                    lat =wh_inst['lat'],
-                                                    lng =wh_inst['lon'],
-                                                    geo_id =  city_inst.get_geo_id(wh_inst['lat'], wh_inst['lon'])
-                                               )
+                                                    lat = wh_inst['lat'],
+                                                    lng = wh_inst['lon'],
+                                                    geo_id = city_inst.get_geo_id(wh_inst['lat'], wh_inst['lon'])
+                                                   )
+
         drops_dict = {}
         for d_id, drop_inst in enumerate(drops_list):
             drops_dict[int(d_id)] = Drop(id = d_id,
@@ -211,10 +224,52 @@ class OptInstance(BaseModel):
                                          store_id = drop_inst['store_id'],
                                          req_date = drop_inst['req_date'],
                                          geo_id = city_inst.get_geo_id(drop_inst['lat'],drop_inst['lon'])
-                                    )
-            
+                                        )
+        
+        # remove unused geos 
+        used_geos = set()
+        for node in it.chain(warehouses_dict.values(),drops_dict.values()):
+            used_geos.add(node.geo_id)
+        
+        for geo_id in list(city_inst.geos.keys()):
+            if geo_id not in used_geos:
+                city_inst.remove_geo(geo_id)
+                    
         return cls(warehouses_dict = warehouses_dict, drops_dict= drops_dict, city = city_inst)
     
+    def get_warm_start(self, n_clusters:int) -> Dict[str,float]:
+        # KMEANS clustering and assignation
+        clusters = range(n_clusters)
+        drops_df = self.drops_df.copy()
+        drops_df['cluster'] = KMeans(n_clusters=n_clusters).fit_predict(drops_df[['lat', 'lng']])
+        
+        warehouses_df = self.warehouses_df[['id','geo_id']]\
+                            .rename(columns={'geo_id':'wh_geo_id', 
+                                             'id':'wh_id'})
+        drops_df = pd.merge(left=drops_df,right= warehouses_df, 
+                            left_on='warehouse_id', right_on='wh_id', how='left')
+        
+        geo_pairs = [ (g1.id,g2.id) for (g1,g2) in  it.combinations(self.geos, 2) ]
+        
+        # star all variables in 0 
+        y = {f'y_{c}_{node.sid}':0 for (c, node) in it.product(range(n_clusters), self.nodes)}
+        z = {f'z_{c}_{g1}_{g2}' :0 for c,(g1,g2) in it.product(clusters, geo_pairs)}
+        has_geo = {f'has_geo_{c}_{geo.id}':0 for (c,geo) in it.product(clusters,self.geos)}
+        
+        for clt in drops_df['cluster'].unique():
+            sub_drops = drops_df[drops_df['cluster']==clt]
+            # drops & warehouses
+            drops = sub_drops['id'].unique()
+            warehouses = sub_drops['warehouse_id'].unique()
+            y.update({f'y_{clt}_d{id}':1.0 for id in drops})
+            y.update({f'y_{clt}_w{id}':1.0 for id in warehouses})
+            # geos 
+            geos_cluster = set(sub_drops['geo_id'].unique()).union(set(sub_drops['wh_geo_id'].unique()))
+            has_geo.update({f'has_geo_{clt}_{geo}':1.0 for geo in geos_cluster})
+            z.update({f'z_{clt}_{g1}_{g2}':1.0 for (g1,g2) in geo_pairs if g1 in geos_cluster and g2 in geos_cluster })
+
+        return {**y, **z, **has_geo}
+
     def get_cluster_df(self):
         cluster_df = self.solution.clusters_df()
         
@@ -238,8 +293,8 @@ class OptInstance(BaseModel):
 
         arcs_shapes = []
         for arc in arc_df.itertuples():
-            geo_i = self.geos[arc.geo_i]
-            geo_j =  self.geos[arc.geo_j]
+            geo_i = self.city.geos[arc.geo_i]
+            geo_j = self.city.geos[arc.geo_j]
             arcs_shapes.append(LineString([geo_i.centroid, geo_j.centroid]).wkt)
         arc_df['shape'] = arcs_shapes
         return arc_df
@@ -251,16 +306,6 @@ class OptInstance(BaseModel):
             return self.drops_dict[int(sid[1:])]
         else:
             return None
-    
-    def distance(self, sid_o:str, sid_d:str) -> float:
-        
-        # TODO optimize this based on a hashmap and 
-        # using preload objetcts no-on the fly transformations 
-
-        # return euclidian distance between two nodes (sid)
-        org_point = self.get_node_sid(sid_o).point
-        des_point = self.get_node_sid(sid_d).point
-        return org_point.distance(des_point)
     
     def plot(self, file_name='plot_map.html'):
         # get data 
