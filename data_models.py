@@ -124,46 +124,21 @@ class Drop(BaseModel):
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id', 'req_date']
 
-class Solution(BaseModel):
-    y: Dict[Tuple,mip.Var]
-    z: Dict[Tuple,mip.Var]
-    features = Optional[List[Dict[Tuple,mip.Var]]]
-    class Config:
-        arbitrary_types_allowed = True
-
-    def clusters_df(self):
-        cluster_list = []
-        for tuple_key in self.y.keys():
-            if self.y[tuple_key].x == 1:
-                # if node in cluster
-                cluster_list.append({'node_sid': tuple_key[0],
-                                     'node_type': tuple_key[0][0],
-                                     'node_id':int(tuple_key[0][1:]),
-                                     'cluster':tuple_key[1] 
-                })
-            else:
-                pass
-        cluster_df = pd.DataFrame(cluster_list)
-        return cluster_df
     
-    def arcs_df(self):
-        arcs_list = []
-        for tuple_key in self.z.keys():
-            if self.z[tuple_key].x == 1:
-                arcs_list.append({'cluster':tuple_key[0],
-                                  'geo_i': tuple_key[1],
-                                  'geo_j':tuple_key[2]
-                })                
-        arcs_df = pd.DataFrame(arcs_list)
-        return arcs_df
 
 class OptInstance(BaseModel):
     warehouses_dict: Dict[int,Warehouse]
     drops_dict: Dict[int,Drop]
     city: City
 
-    solution: Optional[Solution] # name_variable: dict with variables
+    # solution variables
+    sol_node_cluster: Optional[Dict[str,int]] # node_sid:cluster(int)
+    sol_arcs_list: Optional[List[Dict[str,Union[int,str]]]] # list arcs {gi,gj,cluster}
+    sol_features: Optional[List[Dict[Tuple,mip.Var]]]
 
+    class Config:
+        arbitrary_types_allowed = True
+    
     @property
     def nodes(self):
         return list(self.drops_dict.values()) + list(self.warehouses_dict.values())
@@ -270,36 +245,55 @@ class OptInstance(BaseModel):
 
         return {**y, **z, **has_geo}
 
+    def load_solution_mip_vars(self, y:Dict[Tuple,mip.Var], z:Dict[Tuple,mip.Var]) -> None:
+        sol_cluster = {}
+        for tuple_key in y.keys():
+            if y[tuple_key].x == 1:
+                # if node in cluster
+                node_sid = tuple_key[0]
+                cluster = int(tuple_key[1])
+                sol_cluster[node_sid] = cluster 
+        self.sol_node_cluster = sol_cluster
+
+        arcs_list = []
+        for tuple_key in z.keys():
+            if z[tuple_key].x == 1:
+                arcs_list.append({'cluster':tuple_key[0],
+                                  'geo_i': tuple_key[1],
+                                  'geo_j':tuple_key[2]
+                })                
+        self.sol_arcs_list = arcs_list
+
     def get_cluster_df(self):
-        cluster_df = self.solution.clusters_df()
-        
+
         node_list = []
-        for node_sid in cluster_df.node_sid.unique():
-            node = self.get_node_sid(node_sid)
+        for node_sid in self.sol_node_cluster.keys():
+            node = self.get_node_by_sid(node_sid)
             node_list.append({ 
               'node_sid': node_sid,
               'lat': node.lat,
               'lng': node.lng,
               'geo_id': node.geo_id,
-              'warehouse': node.warehouse_id if type(node)==Drop else None,
+              'node_type': 'drop' if type(node)==Drop else 'warehouse',
+              'cluster': self.sol_node_cluster[node_sid]
             })
-        node_df = pd.DataFrame(node_list)       
-        cluster_df = pd.merge(left = cluster_df, right = node_df, 
-                                on='node_sid', how='left')
+        cluster_df = pd.DataFrame(node_list)       
         return cluster_df
     
     def get_inter_geo_df(self):
-        arc_df = self.solution.arcs_df()
+        arcs_list = []
+        for arc in self.sol_arcs_list:
+            geo_i = self.city.geos[arc['geo_i']]
+            geo_j = self.city.geos[arc['geo_j']]
+            line = LineString([geo_i.centroid, geo_j.centroid]).wkt
+            arcs_list.append({'geo_i': arc['geo_i'],
+                              'geo_j': arc['geo_j'],
+                              'cluster': arc['cluster'],
+                              'shape': line
+            })
+        return pd.DataFrame(arcs_list)
 
-        arcs_shapes = []
-        for arc in arc_df.itertuples():
-            geo_i = self.city.geos[arc.geo_i]
-            geo_j = self.city.geos[arc.geo_j]
-            arcs_shapes.append(LineString([geo_i.centroid, geo_j.centroid]).wkt)
-        arc_df['shape'] = arcs_shapes
-        return arc_df
-
-    def get_node_sid(self, sid:str):
+    def get_node_by_sid(self, sid:str):
         if 'w' in sid:
             return self.warehouses_dict[int(sid[1:])]
         elif 'd' in sid:
@@ -309,9 +303,9 @@ class OptInstance(BaseModel):
     
     def plot(self, file_name='plot_map.html'):
         # get data 
-        geos_layer_df = self.city.to_gpd()
+        geos_layer_df    = self.city.to_gpd()
         cluster_layer_df = self.get_cluster_df()
-        inter_geo_df = self.get_inter_geo_df()
+        inter_geo_df     = self.get_inter_geo_df()
 
         # build map
         out_map = KeplerGl(height=400, config=KEPLER_CONFIG)

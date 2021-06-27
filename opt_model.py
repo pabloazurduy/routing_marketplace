@@ -1,4 +1,4 @@
-from data_models import OptInstance, Solution
+from data_models import OptInstance
 from datetime import date
 import pandas as pd 
 import numpy as np
@@ -150,6 +150,5 @@ solution_dict = { 'y':  y,
 for c in clusters:
     print(f'{c = }, {ft_size_geo[c].x = }, {ft_size_drops[c].x = }, {ft_size_drops[c].x = }, {ft_size_pickups[c].x = }, {ft_inter_geo_dist[c].x = }')
 
-opt_instance.solution = Solution(y = y, z = z)
-
+opt_instance.load_solution_mip_vars(y = y, z = z)
 opt_instance.plot()
