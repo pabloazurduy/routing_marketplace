@@ -126,7 +126,7 @@ model.objective = mip.xsum([beta_size*ft_size[c]
                             + beta_ft_inter_geo_dist*ft_inter_geo_dist[c] 
                             for c in clusters])
 
-model.max_seconds = 60 * 20 # min 
+model.max_seconds = 60 * 5 # min 
 # get a warm start 
 warm_start = opt_instance.get_warm_start(n_clusters)
 start_list = [(model.var_by_name(var_name), value_start) for (var_name, value_start) in warm_start.items()]

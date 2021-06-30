@@ -13,6 +13,7 @@ from constants import KEPLER_CONFIG
 import mip
 import itertools as it
 from sklearn.cluster import KMeans
+from copy import deepcopy
 
 # city meta classes 
 class Geo(BaseModel):
@@ -124,15 +125,16 @@ class Drop(BaseModel):
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id', 'req_date']
 
-    
-
 class OptInstance(BaseModel):
     warehouses_dict: Dict[int,Warehouse]
     drops_dict: Dict[int,Drop]
     city: City
+    
+    # cache_distance 
+    dist_geos: Optional[Dict[frozenset, float]]
 
     # solution variables
-    sol_node_cluster: Optional[Dict[str,int]] # node_sid:cluster(int)
+    sol_cluster: Optional[List[Dict[str,Union[int,str]]]] # [{node_sid:cluster(int)}]
     sol_arcs_list: Optional[List[Dict[str,Union[int,str]]]] # list arcs {gi,gj,cluster}
     sol_features: Optional[List[Dict[Tuple,mip.Var]]]
 
@@ -199,8 +201,7 @@ class OptInstance(BaseModel):
                                          store_id = drop_inst['store_id'],
                                          req_date = drop_inst['req_date'],
                                          geo_id = city_inst.get_geo_id(drop_inst['lat'],drop_inst['lon'])
-                                        )
-        
+                                        )        
         # remove unused geos 
         used_geos = set()
         for node in it.chain(warehouses_dict.values(),drops_dict.values()):
@@ -209,9 +210,97 @@ class OptInstance(BaseModel):
         for geo_id in list(city_inst.geos.keys()):
             if geo_id not in used_geos:
                 city_inst.remove_geo(geo_id)
-                    
-        return cls(warehouses_dict = warehouses_dict, drops_dict= drops_dict, city = city_inst)
+        
+        sol_cluster = None
+        # if solution in df then load
+        if 'id_route' in instance_df.columns:
+            sol_cluster = []
+            for d_id, drop_inst in enumerate(drops_list):
+                sol_cluster.append({'node_sid':f'd{d_id}',
+                                    'cluster':int(drop_inst['id_route'])
+                })
+                sol_cluster.append({'node_sid':f'w{drop_inst["pickup_warehouse_id"]}',
+                                    'cluster':     int(drop_inst['id_route'])
+                })
+            # remove duplicates
+            sol_cluster = [dict(node_t) for node_t in {tuple(node.items()) for node in sol_cluster}]
+
+        return cls(warehouses_dict = warehouses_dict, drops_dict= drops_dict, city = city_inst, sol_cluster = sol_cluster)
     
+    def get_node_by_sid(self, sid:str):
+        if 'w' in sid:
+            return self.warehouses_dict[int(sid[1:])]
+        elif 'd' in sid:
+            return self.drops_dict[int(sid[1:])]
+        else:
+            return None
+    
+    def distance_geos(self, g1_id:int, g2_id:int):
+        key = frozenset([g1_id, g2_id])
+        if self.dist_geos is None:
+            self.dist_geos = {}
+        if key not in self.dist_geos: # try cache
+            self.dist_geos[key] = self.city.geos[g1_id].distance(self.city.geos[g2_id])
+        
+        return self.dist_geos[key]
+
+
+
+    def build_features(self, sol_cluster:Optional[List[Dict[str,int]]]=None):
+        """infer features based on a solution `self.sol_cluster` : [{node_sid:cluster}]
+
+        Raises:
+            ValueError: [description]
+        """
+        #check if solution 
+        if not self.sol_cluster and not sol_cluster: 
+            raise ValueError('No Solution added yet, try using "opt_instance.get_warm_start()" method before')
+        
+        if self.sol_cluster and not sol_cluster:
+            sol_cluster = deepcopy(self.sol_cluster)
+
+        clusters_df = pd.DataFrame(sol_cluster)
+        clusters_node_dict = clusters_df.groupby('cluster')['node_sid'].apply(list).to_dict()
+        clusters_geo_dict = {c:set([self.get_node_by_sid(n).geo_id for n in nodes]) for (c,nodes) in clusters_node_dict.items()}
+        clusters = list(clusters_node_dict.keys())
+
+        # features
+        y = {} 
+        z = {}
+        ft_size = {}
+        ft_size_drops = {}
+        ft_size_pickups = {}
+        ft_has_geo = {}
+        ft_size_geo = {}
+        ft_inter_geo_dist = {}
+        
+        for node,c in it.product(self.nodes, clusters): 
+            y[(node.sid,c)] = 1 if node.sid in clusters_node_dict[c] else 0
+
+        for c,(g1,g2) in it.product(clusters, it.combinations(self.geos, 2)):
+            z[(c,g1.id,g2.id)] = 1 if g1.id in clusters_geo_dict[c] and g2.id in clusters_geo_dict[c] else 0
+
+        for c in clusters:
+            ft_size[c]           = len(clusters_node_dict[c])
+            ft_size_drops[c]     = len([nd for nd in clusters_node_dict[c] if 'd' in nd])
+            ft_size_pickups[c]   = len([nd for nd in clusters_node_dict[c] if 'w' in nd])
+            ft_size_geo[c]       = len(clusters_geo_dict[c])
+            
+            
+            # unpack keys (it doesn't work in one line, no clue why )
+            # sum([self.distance_geos(g1,g2)  for (cz,g1,g2) in z.keys() if z[(cz,g1,g2)]==1 and cz == c ])
+            keys = []    
+            for key in z.keys():
+                if key[0] == c and z[key] == 1:
+                    keys.append(key)
+            ft_inter_geo_dist[c] = sum([ self.distance_geos(key[1],key[2]) for key in keys ])
+        
+            for geo in self.geos:
+                ft_has_geo[(c,geo.id)] = 1 if geo.id in clusters_geo_dict[c] else 0
+
+            return y , z ,ft_size, ft_size_drops ,ft_size_pickups ,ft_has_geo ,ft_size_geo ,ft_inter_geo_dist 
+
+
     def get_warm_start(self, n_clusters:int) -> Dict[str,float]:
         # KMEANS clustering and assignation
         clusters = range(n_clusters)
@@ -226,6 +315,8 @@ class OptInstance(BaseModel):
         
         geo_pairs = [ (g1.id,g2.id) for (g1,g2) in  it.combinations(self.geos, 2) ]
         
+        # TODO: refactor this code !! issue #22
+
         # star all variables in 0 
         y = {f'y_{c}_{node.sid}':0 for (c, node) in it.product(range(n_clusters), self.nodes)}
         z = {f'z_{c}_{g1}_{g2}' :0 for c,(g1,g2) in it.product(clusters, geo_pairs)}
@@ -246,14 +337,14 @@ class OptInstance(BaseModel):
         return {**y, **z, **has_geo}
 
     def load_solution_mip_vars(self, y:Dict[Tuple,mip.Var], z:Dict[Tuple,mip.Var]) -> None:
-        sol_cluster = {}
+        sol_cluster = []
         for tuple_key in y.keys():
             if y[tuple_key].x == 1:
                 # if node in cluster
-                node_sid = tuple_key[0]
-                cluster = int(tuple_key[1])
-                sol_cluster[node_sid] = cluster 
-        self.sol_node_cluster = sol_cluster
+                sol_cluster.append({'node_sid': tuple_key[0],
+                                    'cluster':int(tuple_key[1])
+                })  
+        self.sol_cluster = sol_cluster
 
         arcs_list = []
         for tuple_key in z.keys():
@@ -265,17 +356,16 @@ class OptInstance(BaseModel):
         self.sol_arcs_list = arcs_list
 
     def get_cluster_df(self):
-
         node_list = []
-        for node_sid in self.sol_node_cluster.keys():
-            node = self.get_node_by_sid(node_sid)
+        for node_c in self.sol_cluster:
+            node = self.get_node_by_sid(node_c['node_sid'])
             node_list.append({ 
-              'node_sid': node_sid,
+              'node_sid': node_c['node_sid'],
               'lat': node.lat,
               'lng': node.lng,
               'geo_id': node.geo_id,
               'node_type': 'drop' if type(node)==Drop else 'warehouse',
-              'cluster': self.sol_node_cluster[node_sid]
+              'cluster': node_c['cluster']
             })
         cluster_df = pd.DataFrame(node_list)       
         return cluster_df
@@ -292,14 +382,6 @@ class OptInstance(BaseModel):
                               'shape': line
             })
         return pd.DataFrame(arcs_list)
-
-    def get_node_by_sid(self, sid:str):
-        if 'w' in sid:
-            return self.warehouses_dict[int(sid[1:])]
-        elif 'd' in sid:
-            return self.drops_dict[int(sid[1:])]
-        else:
-            return None
     
     def plot(self, file_name='plot_map.html'):
         # get data 
@@ -315,3 +397,11 @@ class OptInstance(BaseModel):
         out_map.add_data(data=inter_geo_df, name='inter_geo')
 
         out_map.save_to_html(file_name=file_name)
+
+
+class MarkteplaceInstance(BaseModel):
+    opt_instance: OptInstance
+    cluster_result: Dict[str, float]
+
+    class Config:
+        arbitrary_types_allowed = True
