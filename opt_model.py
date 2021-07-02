@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import mip
 import itertools as it 
+from pydantic import BaseModel
 
 # create instance 
 # load data 
@@ -15,6 +16,9 @@ instance_df['req_date'] = np.where(~instance_df['is_warehouse'],
                                    None)
 
 opt_instance = OptInstance.load_instance(instance_df)
+
+
+
 
 # =========================== #
 # ===  optimization model === #
@@ -35,7 +39,6 @@ for node,c in it.product(opt_instance.nodes, clusters): # in cluster var
 z = {} # distance variables 
 for c,(g1,g2) in it.product(clusters, it.combinations(opt_instance.geos, 2)): # unique combinations  
     z[(c,g1.id,g2.id)] = model.add_var(var_type = mip.BINARY , name = f'z_{c}_{g1.id}_{g2.id}')
-
 
 # features 
 ft_size = {}
@@ -71,7 +74,7 @@ for node,c in it.product(opt_instance.drops, clusters):
 for c, wh in it.product(clusters, opt_instance.warehouses):
     # 2. remove unused nodes 
     model.add_constr(mip.xsum([y[(drop.sid, c)] for drop in opt_instance.drops if drop.warehouse_id == wh.id]) >= y[(wh.sid, c)], 
-                     name=f'no_wh_if_no_need_to_c{c}_{wh.sid}') 
+                    name=f'no_wh_if_no_need_to_c{c}_{wh.sid}') 
 
 print('adding size features constraints')
 # Size Features
@@ -109,7 +112,7 @@ for (c,g1,g2) in z.keys():
 for c in clusters:
     # 7. cod ft_inter_geo_dist 
     model.add_constr(ft_inter_geo_dist[c] == mip.xsum([z[(c,g1.id,g2.id)] * float(g1.distance(g2)) for g1,g2 in it.combinations(opt_instance.geos,2)]),
-                     name=f'cod_ft_inter_geo_dist_{c}') 
+                    name=f'cod_ft_inter_geo_dist_{c}') 
 
 print('adding objective function')
 # objective function
@@ -139,12 +142,12 @@ print('optimization starting')
 model.optimize()
 
 solution_dict = { 'y':  y,  
-                  'ft_size' :  ft_size,
-                  'ft_size_drops' :  ft_size_drops,
-                  'ft_size_pickups' :  ft_size_pickups,
-                  'ft_has_geo' :  ft_has_geo,
-                  'ft_size_geo' :  ft_size_geo,
-                  'ft_inter_geo_dist' : ft_inter_geo_dist,
+                'ft_size' :  ft_size,
+                'ft_size_drops' :  ft_size_drops,
+                'ft_size_pickups' :  ft_size_pickups,
+                'ft_has_geo' :  ft_has_geo,
+                'ft_size_geo' :  ft_size_geo,
+                'ft_inter_geo_dist' : ft_inter_geo_dist,
                 }
 
 for c in clusters:

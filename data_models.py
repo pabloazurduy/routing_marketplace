@@ -1,19 +1,23 @@
 # Data Models + Utilities
 
-from numpy import product
-import pandas as pd 
-from pydantic import BaseModel 
-from datetime import date 
-from typing import List, Optional, Dict, Tuple, Union
-import json
-from shapely.geometry import shape, Point, Polygon, LineString
-import geopandas
-from keplergl import KeplerGl
-from constants import KEPLER_CONFIG
-import mip
 import itertools as it
-from sklearn.cluster import KMeans
+import json
 from copy import deepcopy
+from datetime import date
+from typing import Dict, List, Optional, Tuple, Union
+
+import geopandas
+import mip
+import pandas as pd
+from keplergl import KeplerGl
+from numpy import product
+from pydantic import BaseModel
+from shapely.geometry import LineString, Point, Polygon, shape
+from sklearn import linear_model
+from sklearn.cluster import KMeans
+
+from constants import KEPLER_CONFIG
+
 
 # city meta classes 
 class Geo(BaseModel):
@@ -136,7 +140,11 @@ class OptInstance(BaseModel):
     # solution variables
     sol_cluster: Optional[List[Dict[str,Union[int,str]]]] # [{node_sid:cluster(int)}]
     sol_arcs_list: Optional[List[Dict[str,Union[int,str]]]] # list arcs {gi,gj,cluster}
-    sol_features: Optional[List[Dict[Tuple,mip.Var]]]
+    sol_features: Optional[Dict[str,Dict[int,float]]] # list dict{cluster: value_feature}
+
+    # markeplace_performance
+    sol_time_performance: Optional[List[Dict[str,float]]]
+    beta_dict: Optional[Dict[str,float]] # {'feat_name': beta_coef} 
 
     class Config:
         arbitrary_types_allowed = True
@@ -298,8 +306,13 @@ class OptInstance(BaseModel):
             for geo in self.geos:
                 ft_has_geo[(c,geo.id)] = 1 if geo.id in clusters_geo_dict[c] else 0
 
-            return y , z ,ft_size, ft_size_drops ,ft_size_pickups ,ft_has_geo ,ft_size_geo ,ft_inter_geo_dist 
-
+            self.sol_features = {'ft_size':ft_size, 
+                                 'ft_size_drops':ft_size_drops,
+                                 'ft_size_pickups':ft_size_pickups,
+                                 'ft_has_geo':ft_has_geo,
+                                 'ft_size_geo':ft_size_geo,
+                                 'ft_inter_geo_dist':ft_inter_geo_dist }
+            #return y,z
 
     def get_warm_start(self, n_clusters:int) -> Dict[str,float]:
         # KMEANS clustering and assignation
@@ -354,6 +367,35 @@ class OptInstance(BaseModel):
                                   'geo_j':tuple_key[2]
                 })                
         self.sol_arcs_list = arcs_list
+    
+    def load_markeplace_data(self, mkp_instance_df:pd.DataFrame) -> None:
+        mkp_instance_df['acceptance_time_min'] =(   pd.to_datetime(mkp_instance_df['route_acceptance_timestamp'])
+                                                  - pd.to_datetime(mkp_instance_df['route_creation_timestamp'])
+                                                ).dt.total_seconds()/60 
+        
+        self.sol_time_performance = mkp_instance_df[['id_route','acceptance_time_min']].to_dict(orient='records')
+
+    def fit_betas_time_based(self):
+        sol_df = pd.DataFrame(self.sol_time_performance)
+        features_df = pd.DataFrame({k:v for k,v in self.sol_features.items() if k != 'ft_has_geo'} )
+        
+        columns_ft_has_geo = {}    
+        for geo in set([ geo for (clt, geo) in self.sol_features['ft_has_geo'].keys()]):
+            columns_ft_has_geo[f'ft_has_geo_{geo}']={clt:val for (clt,geoi),val in self.sol_features['ft_has_geo'].items() if geoi == geo}
+        ft_has_geo_df = pd.DataFrame(columns_ft_has_geo)
+        features_df = pd.merge(left=features_df, right=ft_has_geo_df, left_index=True, right_index=True)
+
+        features_df['id_route'] = features_df.index
+        train_df = pd.merge(left = sol_df, right = features_df, how='left', on ='id_route')
+
+        model = linear_model.Lasso(alpha=0.1)
+        #linear_model.LassoLars(alpha=.1)
+        #linear_model.Ridge(alpha=.5)
+        x_df = train_df[train_df.columns.difference(['acceptance_time_min', 'id_route'])]
+        model.fit(X = x_df , y = train_df['acceptance_time_min'] )
+        
+        beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}
+        self.beta_dict = beta_dict
 
     def get_cluster_df(self):
         node_list = []
@@ -397,11 +439,3 @@ class OptInstance(BaseModel):
         out_map.add_data(data=inter_geo_df, name='inter_geo')
 
         out_map.save_to_html(file_name=file_name)
-
-
-class MarkteplaceInstance(BaseModel):
-    opt_instance: OptInstance
-    cluster_result: Dict[str, float]
-
-    class Config:
-        arbitrary_types_allowed = True
