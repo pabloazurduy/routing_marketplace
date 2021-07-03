@@ -6,24 +6,31 @@ import mip
 import itertools as it 
 from pydantic import BaseModel
 
-# create instance 
+# create solved instance 
+instance_sol_attr  = pd.read_csv('instance_simulator/real_instances/instance_sol_attributes_2021-06-08.csv', sep=';')
+instance_sol_df    = pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
+
+instance_sol_df['req_date'] = np.where(~instance_sol_df['is_warehouse'], date(2021,6,8), None)
+opt_instance_prev = OptInstance.load_instance(instance_sol_df)
+opt_instance_prev.build_features()
+opt_instance_prev.load_markeplace_data(instance_sol_attr)
+opt_instance_prev.fit_betas_time_based()
 # load data 
 instance_df = pd.read_csv('instance_simulator/real_instances/instance_2021-05-24.csv', 
                           sep=';')
 # add req_date 
-instance_df['req_date'] = np.where(~instance_df['is_warehouse'],  
-                                   date(2021,5,24), 
-                                   None)
-
+instance_df['req_date'] = np.where(~instance_df['is_warehouse'], date(2021,5,24), None)
 opt_instance = OptInstance.load_instance(instance_df)
-
-
-
 
 # =========================== #
 # ===  optimization model === #
 # =========================== #
-model = mip.Model(name = 'clustering', sense = mip.MAXIMIZE)
+#class Aron(BaseModel):
+
+ #   @classmethod
+ #   def load_model(cls, opt_instance):
+
+model = mip.Model(name = 'clustering')
 
 # Instance Parameters 
 n_clusters = 25 # max number of clusters ? TODO: there should be a Z* equivalent way of modeling this problem 
@@ -111,31 +118,31 @@ for (c,g1,g2) in z.keys():
 
 for c in clusters:
     # 7. cod ft_inter_geo_dist 
-    model.add_constr(ft_inter_geo_dist[c] == mip.xsum([z[(c,g1.id,g2.id)] * float(g1.distance(g2)) for g1,g2 in it.combinations(opt_instance.geos,2)]),
+    model.add_constr(ft_inter_geo_dist[c] == mip.xsum([z[(c,g1.id,g2.id)] * opt_instance.distance_geos(g1.id, g2.id) for g1,g2 in it.combinations(opt_instance.geos,2)]),
                     name=f'cod_ft_inter_geo_dist_{c}') 
 
 print('adding objective function')
 # objective function
-beta_size = 4
-beta_size_drops = -1
-beta_size_pickups = -1
-beta_size_geo = -1
-beta_ft_inter_geo_dist = -2
 
-model.objective = mip.xsum([beta_size*ft_size[c] 
-                            + beta_size_drops*ft_size_drops[c]
-                            + beta_size_pickups*ft_size_pickups[c]
-                            + beta_size_geo*ft_size_geo[c] 
-                            + beta_ft_inter_geo_dist*ft_inter_geo_dist[c] 
-                            for c in clusters])
+model.sense = mip.MINIMIZE
+model.objective = mip.xsum([  opt_instance_prev.beta_dict['ft_size']          *ft_size[c] 
+                            + opt_instance_prev.beta_dict['ft_size_drops']    *ft_size_drops[c]
+                            + opt_instance_prev.beta_dict['ft_size_pickups']  *ft_size_pickups[c]
+                            + opt_instance_prev.beta_dict['ft_size_geo']      *ft_size_geo[c] 
+                            + opt_instance_prev.beta_dict['ft_inter_geo_dist']*ft_inter_geo_dist[c] 
+                            for c in clusters] + 
+                            [opt_instance_prev.beta_dict.get(f'ft_has_geo_{geo.id}',0) * ft_has_geo[c,geo.id]
+                             for geo, c in it.product(opt_instance.geos,clusters)]                            
+                            )
 
-model.max_seconds = 60 * 5 # min 
+model.max_seconds = 60 * 30 # min 
 # get a warm start 
 warm_start = opt_instance.get_warm_start(n_clusters)
 start_list = [(model.var_by_name(var_name), value_start) for (var_name, value_start) in warm_start.items()]
 
 print('validating start')
 model.start = start_list 
+model.emphasis = 2
 # model.validate_mip_start()
 
 print('optimization starting')
