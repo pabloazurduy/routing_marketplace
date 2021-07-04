@@ -2,7 +2,7 @@ import unittest
 from collections.abc import Iterable
 
 from numpy import result_type 
-from instance_simulator import simulator as sim
+from instance_simulator import vrp_simulator as sim
 import datetime 
 import itertools
 import pandas as pd 
