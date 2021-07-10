@@ -14,7 +14,7 @@ from numpy import product
 from pydantic import BaseModel
 from shapely.geometry import LineString, Point, Polygon, shape
 from sklearn import linear_model
-from sklearn.cluster import KMeans
+from sklearn import cluster
 
 from constants import KEPLER_CONFIG
 
@@ -138,9 +138,11 @@ class OptInstance(BaseModel):
     dist_geos: Optional[Dict[frozenset, float]]
 
     # solution variables
-    sol_cluster: Optional[List[Dict[str,Union[int,str]]]] # [{node_sid:cluster(int)}]
+    sol_cluster:   Optional[List[Dict[str,Union[int,str]]]] # [{node_sid:cluster(int)}]
     sol_arcs_list: Optional[List[Dict[str,Union[int,str]]]] # list arcs {gi,gj,cluster}
-    sol_features: Optional[Dict[str,Dict[int,float]]] # list dict{cluster: value_feature}
+    sol_features:  Optional[Dict[str,Dict[int,float]]] # list dict{cluster: value_feature}
+    sol_y : Optional[List[Dict[str,int]]] # [{node_sid:cluster(int)}]
+    sol_z : Optional[List[Dict[str,int]]] # [{node_sid:cluster(int)}]
 
     # markeplace_performance
     sol_time_performance: Optional[List[Dict[str,float]]]
@@ -172,6 +174,18 @@ class OptInstance(BaseModel):
     @property
     def geos(self) -> List[Geo]:
         return list(self.city.geos.values())
+    
+    @property
+    def mip_has_geo(self) -> Dict[str, float]:
+        return {f'has_geo_{k[0]}_{k[1]}':v for k,v in self.sol_features['ft_has_geo'].items()}
+    
+    @property
+    def mip_y(self) -> Dict[str, float]:
+        return {f'y_{k[1]}_{k[0]}':v for (k,v) in self.sol_y.items()}
+    
+    @property
+    def mip_z(self) -> Dict[str, float]:
+        return {f'z_{k[0]}_{k[1]}_{k[2]}':v for (k,v) in self.sol_z.items()}
 
     @classmethod
     def load_instance(cls, instance_df = pd.DataFrame):
@@ -235,6 +249,9 @@ class OptInstance(BaseModel):
 
         return cls(warehouses_dict = warehouses_dict, drops_dict= drops_dict, city = city_inst, sol_cluster = sol_cluster)
     
+    def get_geo_by_id(self, geo_id: int) -> Geo:
+        return self.city.geos[geo_id]
+
     def get_node_by_sid(self, sid:str):
         if 'w' in sid:
             return self.warehouses_dict[int(sid[1:])]
@@ -312,42 +329,39 @@ class OptInstance(BaseModel):
                                  'ft_has_geo':ft_has_geo,
                                  'ft_size_geo':ft_size_geo,
                                  'ft_inter_geo_dist':ft_inter_geo_dist }
-            #return y,z
+            self.sol_y = y
+            self.sol_z = z
 
-    def get_warm_start(self, n_clusters:int) -> Dict[str,float]:
-        # KMEANS clustering and assignation
+    def build_warm_start(self, n_clusters:int, algorithm:str = 'KMeans') -> Dict[str,float]:
+        
+        # clustering
+        allowed_algo = ['KMeans','SpectralClustering', 'AgglomerativeClustering']
         clusters = range(n_clusters)
         drops_df = self.drops_df.copy()
-        drops_df['cluster'] = KMeans(n_clusters=n_clusters).fit_predict(drops_df[['lat', 'lng']])
         
+        if algorithm not in allowed_algo:
+            raise ValueError(f'{algorithm} not in allowed values {allowed_algo}')
+
+        cluster_model = eval(f'cluster.{algorithm}(n_clusters={n_clusters})')    
+        drops_df['cluster'] = cluster_model.fit_predict(drops_df[['lat', 'lng']])
+
         warehouses_df = self.warehouses_df[['id','geo_id']]\
                             .rename(columns={'geo_id':'wh_geo_id', 
                                              'id':'wh_id'})
         drops_df = pd.merge(left=drops_df,right= warehouses_df, 
                             left_on='warehouse_id', right_on='wh_id', how='left')
+        sol_cluster = []
+        for drop in drops_df.itertuples():
+            sol_cluster.append({'node_sid':f'd{drop.id}',
+                                'cluster' :int(drop.cluster)
+            })
+            sol_cluster.append({'node_sid':f'w{drop.warehouse_id}',
+                                'cluster' :int(drop.cluster)
+            })
+        # remove duplicates
+        sol_cluster = [dict(node_t) for node_t in {tuple(node.items()) for node in sol_cluster}]
+        self.sol_cluster = sol_cluster
         
-        geo_pairs = [ (g1.id,g2.id) for (g1,g2) in  it.combinations(self.geos, 2) ]
-        
-        # TODO: refactor this code !! issue #22
-
-        # star all variables in 0 
-        y = {f'y_{c}_{node.sid}':0 for (c, node) in it.product(range(n_clusters), self.nodes)}
-        z = {f'z_{c}_{g1}_{g2}' :0 for c,(g1,g2) in it.product(clusters, geo_pairs)}
-        has_geo = {f'has_geo_{c}_{geo.id}':0 for (c,geo) in it.product(clusters,self.geos)}
-        
-        for clt in drops_df['cluster'].unique():
-            sub_drops = drops_df[drops_df['cluster']==clt]
-            # drops & warehouses
-            drops = sub_drops['id'].unique()
-            warehouses = sub_drops['warehouse_id'].unique()
-            y.update({f'y_{clt}_d{id}':1.0 for id in drops})
-            y.update({f'y_{clt}_w{id}':1.0 for id in warehouses})
-            # geos 
-            geos_cluster = set(sub_drops['geo_id'].unique()).union(set(sub_drops['wh_geo_id'].unique()))
-            has_geo.update({f'has_geo_{clt}_{geo}':1.0 for geo in geos_cluster})
-            z.update({f'z_{clt}_{g1}_{g2}':1.0 for (g1,g2) in geo_pairs if g1 in geos_cluster and g2 in geos_cluster })
-
-        return {**y, **z, **has_geo}
 
     def load_solution_mip_vars(self, y:Dict[Tuple,mip.Var], z:Dict[Tuple,mip.Var]) -> None:
         sol_cluster = []
@@ -394,6 +408,13 @@ class OptInstance(BaseModel):
         x_df = train_df[train_df.columns.difference(['acceptance_time_min', 'id_route'])]
         model.fit(X = x_df , y = train_df['acceptance_time_min'] )
         
+        # To print OLS summary  
+        # from statsmodels.api import OLS
+        # result = OLS(train_df['acceptance_time_min'],x_df).fit_regularized('sqrt_lasso')
+        # with open('summary.txt', 'w') as fh:
+        #     fh.write(OLS(train_df['acceptance_time_min'],x_df).fit().summary().as_text())
+        # print(result.params)
+
         beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}
         self.beta_dict = beta_dict
 

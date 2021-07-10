@@ -147,7 +147,9 @@ for instance_path in INSTANCES:
 
     model.max_seconds = 60 * 30 # min 
     # get a warm start 
-    warm_start = opt_instance.get_warm_start(n_clusters)
+    opt_instance.build_warm_start(n_clusters)
+    opt_instance.build_features()
+    warm_start = opt_instance.mip_y | opt_instance.mip_z | opt_instance.mip_has_geo
     start_list = [(model.var_by_name(var_name), value_start) for (var_name, value_start) in warm_start.items()]
 
     print('validating start')
@@ -158,13 +160,13 @@ for instance_path in INSTANCES:
     print('optimization starting')
     model.optimize()
 
-    solution_dict = { 'y':  y,  
-                    'ft_size' :  ft_size,
-                    'ft_size_drops' :  ft_size_drops,
-                    'ft_size_pickups' :  ft_size_pickups,
-                    'ft_has_geo' :  ft_has_geo,
-                    'ft_size_geo' :  ft_size_geo,
-                    'ft_inter_geo_dist' : ft_inter_geo_dist,
+    solution_dict = {'y':  y,  
+                     'ft_size' :  ft_size,
+                     'ft_size_drops' :  ft_size_drops,
+                     'ft_size_pickups' :  ft_size_pickups,
+                     'ft_has_geo' :  ft_has_geo,
+                     'ft_size_geo' :  ft_size_geo,
+                     'ft_inter_geo_dist' : ft_inter_geo_dist,
                     }
 
     for c in clusters:

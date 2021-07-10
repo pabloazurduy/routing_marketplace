@@ -23,8 +23,9 @@ class MarketplaceSimulation(unittest.TestCase):
     
     def test_simulate_routing_instance(self):
         
-        OptInstance.load_instance()
-
+        opt_instance = OptInstance.load_instance()
+        opt_instance.get_warm_start()
+        
     def build_sim_marketplace(self):
         beta_dict = get_beta_dict()
         market = MarketplaceSim(num_clouders = 150,
@@ -37,15 +38,13 @@ class MarketplaceSimulation(unittest.TestCase):
     def test_simulate_auction(self):
         market = MarketplaceSim()
         
-        markeplace_sim = marketplace_simulator.build_marketplace_simulation(
-            
-            
-            
+        markeplace_sim = MarketplaceSim.build_marketplace_simulation(
+
 
         )
         self.assertIsInstance(markeplace_sim, pd.DataFrame)
-        columns = [ 'clouder_id',
-                    'route_id',
-                    'accepted'
+        columns = ['clouder_id',
+                   'route_id',
+                   'accepted'
         ]
         self.asserTrue()
