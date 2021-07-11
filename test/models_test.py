@@ -1,5 +1,5 @@
 import unittest
-from data_models import OptInstance
+from data_models import RoutingInstance
 import pandas as pd 
 import numpy as np 
 from datetime import date 
@@ -15,12 +15,12 @@ class DataModels(unittest.TestCase):
                                         date(2021,5,24), 
                                         None)
 
-        opt_instance = OptInstance.load_instance(instance_df)
-        self.assertIsInstance(opt_instance, OptInstance) 
+        routing_instance = RoutingInstance.load_instance(instance_df)
+        self.assertIsInstance(routing_instance, RoutingInstance) 
 
     def test_plot(self):
         instance_sol_df    = pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
         instance_sol_df['req_date'] = np.where(~instance_sol_df['is_warehouse'], date(2021,6,8), None)
-        opt_instance_prev = OptInstance.load_instance(instance_sol_df)
-        opt_instance_prev.build_features()
-        opt_instance_prev.plot()
+        routing_instance_prev = RoutingInstance.load_instance(instance_sol_df)
+        routing_instance_prev.build_features()
+        routing_instance_prev.plot()

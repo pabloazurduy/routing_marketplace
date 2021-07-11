@@ -131,7 +131,7 @@ class Drop(BaseModel):
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id', 'req_date']
 
-class OptInstance(BaseModel):
+class RoutingInstance(BaseModel):
     warehouses_dict: Dict[int,Warehouse]
     drops_dict: Dict[int,Drop]
     city: City
@@ -191,13 +191,13 @@ class OptInstance(BaseModel):
 
     @classmethod
     def load_instance(cls, instance_df = pd.DataFrame):
-        """create an OptInstance based on a pandas dataframe with all the request and warehouse points
+        """create an RoutingInstance based on a pandas dataframe with all the request and warehouse points
 
         Args:
             instance_df ([type], optional): [description]. Defaults to pd.DataFrame.
 
         Returns:
-            OptInstance: [description]
+            RoutingInstance: [description]
         """    
 
         assert set(INSTANCE_DF_COLUMNS).issubset(set(instance_df.columns) ), 'instance dataframe is missing some columns'
@@ -279,7 +279,7 @@ class OptInstance(BaseModel):
         """
         #check if solution 
         if not self.sol_cluster and not sol_cluster: 
-            raise ValueError('No Solution added yet, try using "opt_instance.get_warm_start()" method before')
+            raise ValueError('No Solution added yet, try using "routing_instance.get_warm_start()" method before')
         
         if self.sol_cluster and not sol_cluster:
             sol_cluster = deepcopy(self.sol_cluster)
@@ -475,7 +475,7 @@ class OptInstance(BaseModel):
 class Geodude(BaseModel):
     
     @staticmethod
-    def run_opt_model(opt_instance:OptInstance, beta_dict:dict, max_time:int = 30 ):
+    def run_opt_model(routing_instance:RoutingInstance, beta_dict:dict, max_time:int = 30 ):
         # ============================ # 
         # ==== optimization model ==== #
         # ============================ # 
@@ -488,12 +488,12 @@ class Geodude(BaseModel):
         # var declaration
         print('var declaration')
         y = {} # cluster variables 
-        for node,c in it.product(opt_instance.nodes, clusters): # in cluster var
+        for node,c in it.product(routing_instance.nodes, clusters): # in cluster var
             y[(node.sid,c)] = model.add_var(var_type = mip.BINARY , name = f'y_{c}_{node.sid}')
 
 
         z = {} # distance variables 
-        for c,(g1,g2) in it.product(clusters, it.combinations(opt_instance.geos, 2)): # unique combinations  
+        for c,(g1,g2) in it.product(clusters, it.combinations(routing_instance.geos, 2)): # unique combinations  
             z[(c,g1.id,g2.id)] = model.add_var(var_type = mip.BINARY , name = f'z_{c}_{g1.id}_{g2.id}')
 
         # features 
@@ -511,7 +511,7 @@ class Geodude(BaseModel):
             ft_size_geo[c] =       model.add_var(var_type = mip.CONTINUOUS , name = f'ft_size_geos_c{c}', lb=0)
             ft_inter_geo_dist[c] = model.add_var(var_type = mip.CONTINUOUS , name = f'ft_inter_geo_dist_c{c}', lb=0)
             
-            for geo in opt_instance.geos:
+            for geo in routing_instance.geos:
                 ft_has_geo[(c,geo.id)] = model.add_var(var_type = mip.BINARY , name = f'has_geo_{c}_{geo.id}')
             
         # ======================== #
@@ -519,41 +519,41 @@ class Geodude(BaseModel):
         # ======================== #
         print('adding cluster constraints')
         # Cluster Constraint
-        for node in opt_instance.drops:
+        for node in routing_instance.drops:
             # 0. demand satisfy
             model.add_constr(mip.xsum([y[(node.sid, c)] for c in clusters]) ==  1, name=f'cluster_fill_{node.sid}') # TODO SOS ? 
 
-        for node,c in it.product(opt_instance.drops, clusters):
+        for node,c in it.product(routing_instance.drops, clusters):
             # 1. pair drop,warehouse 
             model.add_constr(y[(node.sid, c)] <= y[(node.warehouse_sid, c)], name=f'pair_drop_warehouse_{node.sid}_{node.warehouse_sid}') 
 
-        for c, wh in it.product(clusters, opt_instance.warehouses):
+        for c, wh in it.product(clusters, routing_instance.warehouses):
             # 2. remove unused nodes 
-            model.add_constr(mip.xsum([y[(drop.sid, c)] for drop in opt_instance.drops if drop.warehouse_id == wh.id]) >= y[(wh.sid, c)], 
+            model.add_constr(mip.xsum([y[(drop.sid, c)] for drop in routing_instance.drops if drop.warehouse_id == wh.id]) >= y[(wh.sid, c)], 
                             name=f'no_wh_if_no_need_to_c{c}_{wh.sid}') 
 
         print('adding size features constraints')
         # Size Features
         for c in clusters:
             # 2. cod ft_size
-            model.add_constr(ft_size[c] == mip.xsum([y[(node.sid, c)] for node in opt_instance.nodes]), name=f'cod_ft_size_c{c}') 
+            model.add_constr(ft_size[c] == mip.xsum([y[(node.sid, c)] for node in routing_instance.nodes]), name=f'cod_ft_size_c{c}') 
             # 3. cod ft_size_drops
-            model.add_constr(ft_size_drops[c] == mip.xsum([y[(node.sid, c)] for node in opt_instance.drops]), name=f'cod_ft_size_drops_c{c}') 
+            model.add_constr(ft_size_drops[c] == mip.xsum([y[(node.sid, c)] for node in routing_instance.drops]), name=f'cod_ft_size_drops_c{c}') 
             # 4. cod ft_size_pickups
-            model.add_constr(ft_size_pickups[c] == mip.xsum([y[(node.sid, c)] for node in opt_instance.warehouses]), name=f'cod_ft_size_pickups_c{c}') 
+            model.add_constr(ft_size_pickups[c] == mip.xsum([y[(node.sid, c)] for node in routing_instance.warehouses]), name=f'cod_ft_size_pickups_c{c}') 
 
         # Geo Codifications
         print('adding geo cod constraints')
-        M1 =  len(opt_instance.nodes)+1
-        for c,geo in it.product(clusters,opt_instance.geos):
+        M1 =  len(routing_instance.nodes)+1
+        for c,geo in it.product(clusters,routing_instance.geos):
             # 5. cod min ft_has_geo 
-            model.add_constr(M1 * ft_has_geo[(c,geo.id)] >= mip.xsum([y[node.sid,c] for node in opt_instance.nodes if node.geo_id == geo.id]), name=f'cod_ft_has_geo_min_{c}_{geo.id}') 
+            model.add_constr(M1 * ft_has_geo[(c,geo.id)] >= mip.xsum([y[node.sid,c] for node in routing_instance.nodes if node.geo_id == geo.id]), name=f'cod_ft_has_geo_min_{c}_{geo.id}') 
             # 6. cod max ft_has_geo 
-            model.add_constr(     ft_has_geo[(c,geo.id)] <= mip.xsum([y[node.sid,c] for node in opt_instance.nodes if node.geo_id == geo.id]), name=f'cod_ft_has_geo_max_{c}_{geo.id}') 
+            model.add_constr(     ft_has_geo[(c,geo.id)] <= mip.xsum([y[node.sid,c] for node in routing_instance.nodes if node.geo_id == geo.id]), name=f'cod_ft_has_geo_max_{c}_{geo.id}') 
 
         for c in clusters:
             # 7. cod ft_size_geos 
-            model.add_constr(ft_size_geo[c] == mip.xsum([ft_has_geo[(c,geo.id)] for geo in opt_instance.geos]), name=f'cod_ft_size_geos_{c}_{geo.id}') 
+            model.add_constr(ft_size_geo[c] == mip.xsum([ft_has_geo[(c,geo.id)] for geo in routing_instance.geos]), name=f'cod_ft_size_geos_{c}_{geo.id}') 
 
         # Inter Geo Codification
         print('adding inter geo cod constraints')
@@ -567,7 +567,7 @@ class Geodude(BaseModel):
 
         for c in clusters:
             # 7. cod ft_inter_geo_dist 
-            model.add_constr(ft_inter_geo_dist[c] == mip.xsum([z[(c,g1.id,g2.id)] * opt_instance.distance_geos(g1.id, g2.id) for g1,g2 in it.combinations(opt_instance.geos,2)]),
+            model.add_constr(ft_inter_geo_dist[c] == mip.xsum([z[(c,g1.id,g2.id)] * routing_instance.distance_geos(g1.id, g2.id) for g1,g2 in it.combinations(routing_instance.geos,2)]),
                             name=f'cod_ft_inter_geo_dist_{c}') 
 
         print('adding objective function')
@@ -581,14 +581,14 @@ class Geodude(BaseModel):
                                     + beta_dict['ft_inter_geo_dist']*ft_inter_geo_dist[c] 
                                     for c in clusters] + 
                                     [beta_dict.get(f'ft_has_geo_{geo.id}',0) * ft_has_geo[c,geo.id]
-                                    for geo, c in it.product(opt_instance.geos,clusters)]                            
+                                    for geo, c in it.product(routing_instance.geos,clusters)]                            
                                     )
 
         model.max_seconds = 60 * max_time # min 
         # get a warm start 
-        opt_instance.build_warm_start(n_clusters)
-        opt_instance.build_features()
-        warm_start = opt_instance.mip_y | opt_instance.mip_z | opt_instance.mip_has_geo
+        routing_instance.build_warm_start(n_clusters)
+        routing_instance.build_features()
+        warm_start = routing_instance.mip_y | routing_instance.mip_z | routing_instance.mip_has_geo
         start_list = [(model.var_by_name(var_name), value_start) for (var_name, value_start) in warm_start.items()]
 
         print('validating start')
@@ -611,4 +611,4 @@ class Geodude(BaseModel):
         for c in clusters:
             print(f'{c = }, {ft_size_geo[c].x = }, {ft_size_drops[c].x = }, {ft_size_drops[c].x = }, {ft_size_pickups[c].x = }, {ft_inter_geo_dist[c].x = }')
 
-        opt_instance.load_solution_mip_vars(y = y, z = z)
+        routing_instance.load_solution_mip_vars(y = y, z = z)
