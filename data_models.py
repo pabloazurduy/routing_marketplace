@@ -6,7 +6,6 @@ from copy import deepcopy
 from datetime import date
 from typing import Dict, List, Optional, Tuple, Union
 
-import geopandas
 import mip
 import pandas as pd
 from keplergl import KeplerGl
@@ -18,10 +17,9 @@ from sklearn import cluster
 
 from constants import KEPLER_CONFIG
 
-
 # city meta classes 
 class Geo(BaseModel):
-    id: Union[int,str]
+    id: int
     name: Optional[str]
     polygon: Polygon
     area: Optional[float]
@@ -69,27 +67,31 @@ class City(BaseModel):
 
         return cls(id=id, name_city = name_city, geos=geos)
     
-    def get_geo(self, lat:float, lng:float) -> Geo: #TODO latlong to point 
+    def get_geo(self, lat:float, lng:float) -> Optional[Geo]: #TODO latlong to point 
         for geo in self.geos.values():
             if geo.contains(lat, lng):
                 return geo # pointer 
         return None
     
-    def get_geo_id(self, lat:float, lng:float) -> int:
+    def get_geo_id(self, lat:float, lng:float) -> Optional[int]:
         geo_loc = self.get_geo(lat,lng)  
         if geo_loc is None:
             return None 
         else:
             return geo_loc.id
     
-    def remove_geo(self, geo_id:str):
+    def remove_geo(self, geo_id:int):
         del self.geos[geo_id]
     
     def to_gpd(self):
         data = [geo.dict() for geo in self.geos.values()]
-        geos_df = pd.DataFrame.from_records(data = data)
+        data_mod = []
+        for geo_dict in data:
+            geo_dict['polygon'] = geo_dict['polygon'].wkt
+            data_mod.append(geo_dict)
+        geos_df = pd.DataFrame.from_records(data = data_mod)
         geos_df.rename(columns={'polygon':'geometry'}, inplace=True)
-        return  geopandas.GeoDataFrame(geos_df) 
+        return  geos_df
 
 # instance classes 
 class Warehouse(BaseModel):
@@ -269,8 +271,6 @@ class OptInstance(BaseModel):
         
         return self.dist_geos[key]
 
-
-
     def build_features(self, sol_cluster:Optional[List[Dict[str,int]]]=None):
         """infer features based on a solution `self.sol_cluster` : [{node_sid:cluster}]
 
@@ -331,6 +331,16 @@ class OptInstance(BaseModel):
                                  'ft_inter_geo_dist':ft_inter_geo_dist }
             self.sol_y = y
             self.sol_z = z
+
+            arcs_list = []
+            for tuple_key in z.keys():
+                if z[tuple_key] == 1:
+                    arcs_list.append({'cluster':tuple_key[0],
+                                     'geo_i': tuple_key[1],
+                                     'geo_j':tuple_key[2]
+                    })                
+            self.sol_arcs_list = arcs_list #Optional[List[Dict[str,Union[int,str]]]]
+            
 
     def build_warm_start(self, n_clusters:int, algorithm:str = 'KMeans') -> Dict[str,float]:
         
@@ -460,3 +470,26 @@ class OptInstance(BaseModel):
         out_map.add_data(data=inter_geo_df, name='inter_geo')
 
         out_map.save_to_html(file_name=file_name)
+
+class Marketplace(BaseModel):
+    
+    @classmethod
+    def build_simulation(cls, sim_params):
+        return cls()
+    
+    @staticmethod
+    def betas_from_time_df(delivery_instance, cost_df)-> Dict[str,float]:
+        delivery_instance.get_features()
+        beta_dict = {}
+        return beta_dict
+
+    def get_betas(self) -> Dict[str,float]:
+        beta_dict = {}
+        return beta_dict
+    
+class Abra(BaseModel):
+    pass
+
+class Geodude(BaseModel):
+    pass 
+
