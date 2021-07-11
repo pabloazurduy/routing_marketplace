@@ -4,7 +4,7 @@ import itertools as it
 import json
 from copy import deepcopy
 from datetime import date
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 import mip
 import pandas as pd
@@ -140,11 +140,11 @@ class RoutingInstance(BaseModel):
     dist_geos: Optional[Dict[frozenset, float]]
 
     # solution variables
-    sol_cluster:   Optional[List[Dict[str,Union[int,str]]]] # [{node_sid:cluster(int)}]
+    sol_cluster:   Optional[List[Dict[str,Union[int,object]]]] # [{node_sid:cluster(int)}]
     sol_arcs_list: Optional[List[Dict[str,Union[int,str]]]] # list arcs {gi,gj,cluster}
     sol_features:  Optional[Dict[str,Dict[int,float]]] # list dict{cluster: value_feature}
-    sol_y : Optional[List[Dict[str,int]]] # [{node_sid:cluster(int)}]
-    sol_z : Optional[List[Dict[str,int]]] # [{node_sid:cluster(int)}]
+    sol_y : Optional[Dict[Tuple[Any, Any], int]] # [{node_sid:cluster(int)}]
+    sol_z : Optional[Dict[Tuple[Any, Any, Any], int]] # [{():cluster(int)}]
 
     # markeplace_performance
     sol_time_performance: Optional[List[Dict[str,float]]]
@@ -342,7 +342,7 @@ class RoutingInstance(BaseModel):
             self.sol_arcs_list = arcs_list #Optional[List[Dict[str,Union[int,str]]]]
             
 
-    def build_warm_start(self, n_clusters:int, algorithm:str = 'KMeans') -> Dict[str,float]:
+    def build_warm_start(self, n_clusters:int, algorithm:str = 'KMeans'):
         
         # clustering
         allowed_algo = ['KMeans','SpectralClustering', 'AgglomerativeClustering']
@@ -373,7 +373,7 @@ class RoutingInstance(BaseModel):
         self.sol_cluster = sol_cluster
         
 
-    def load_solution_mip_vars(self, y:Dict[Tuple,mip.Var], z:Dict[Tuple,mip.Var]) -> None:
+    def load_solution_mip_vars(self, y:Dict[Tuple[Any, Any],mip.Var], z:Dict[Tuple[Any,Any,Any],mip.Var]) -> None:
         sol_cluster = []
         for tuple_key in y.keys():
             if y[tuple_key].x == 1:
