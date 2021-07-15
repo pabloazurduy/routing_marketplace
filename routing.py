@@ -51,6 +51,9 @@ class City(BaseModel):
     name_city: Optional[str]
     geos: Dict[int, Geo]
 
+    @property
+    def geos_list(self) -> List[Geo]:
+        return List(self.geos.values())
     @classmethod
     def from_geojson(cls, geojson_file_path:str, name_city:Optional[str]=None, id:Optional[int]=None):
 
