@@ -3,6 +3,7 @@ from typing import Dict, Optional
 from routing import Geo, City
 import random
 import numpy as np 
+from scipy.special import expit
 
 class Clouder(BaseModel):
     id: int
@@ -11,10 +12,12 @@ class Clouder(BaseModel):
     is_fake:bool = False
 
     # FakeClouderParams
-    _sim_connect_prob:Optional[float]
-    _sim_ideal_route_len:Optional[int]
-    _sim_price_elasticity:Optional[float]
-    _sim_beta_features:Optional[Dict[str,float]]
+    sim_connect_prob:Optional[float]
+    sim_ideal_route_len:Optional[int]
+    sim_price_elasticity:Optional[float]
+    sim_beta_features:Optional[Dict[str,float]]
+    sim_route_utility_low: Optional[float]
+    sim_route_utility_up: Optional[float]
 
     @classmethod
     def make_fake(cls,id:int, mean_connect_prob:float, mean_route_len:int, mean_beta_features:Dict[str,float], 
@@ -35,11 +38,21 @@ class Clouder(BaseModel):
             mean_param = abs(mean_beta_features[feat_name])
             sim_beta_features[feat_name] = np.random.gamma(shape =  mean_param, scale = 1) # E(X) = shape*scale 
 
-        return cls(id = id, origin = sim_geo,  is_fake = True, _sim_connect_prob = sim_connect_prob,
-                   _sim_ideal_route_len=sim_route_len, )
+        sim_price_elasticity = np.random.gamma(shape =  10, scale = 1)
 
-    def _sim_match_route(self, route_features:Dict[str,float])-> float: # IP acceptance
-        pass
+        return cls(id = id, origin = sim_geo,  is_fake = True, sim_connect_prob = sim_connect_prob,
+                   sim_ideal_route_len=sim_route_len, sim_price_elasticity = sim_price_elasticity)
+
+    def sim_match_route(self, route_features:Dict[str,float], route_price:float)-> float: # IP acceptance
+        if not self.is_fake: 
+            raise ValueError('This method only works for simulated Clouder')
+
+        route_utility = (sum([self.sim_beta_features[feat]*route_features[feat] for feat in route_features.keys() if feat != 'ft_size_pickups']) 
+                            +  route_price*self.sim_price_elasticity
+                            + self.sim_beta_features['ft_size_pickups'](self.sim_ideal_route_len-((route_features['ft_size_pickups']-self.sim_ideal_route_len)**2)) # a quadratic term for route ft_size_pickups
+                        )
+        
+        return expit(route_utility)
     
 
 class MarketplaceInstance(BaseModel):

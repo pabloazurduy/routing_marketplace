@@ -50,6 +50,9 @@ class City(BaseModel):
     id: Optional[int]
     name_city: Optional[str]
     geos: Dict[int, Geo]
+    
+    # cache_distance 
+    dist_geos: Optional[Dict[frozenset, float]]
 
     @property
     def geos_list(self) -> List[Geo]:
@@ -95,20 +98,33 @@ class City(BaseModel):
         geos_df = pd.DataFrame.from_records(data = data_mod)
         geos_df.rename(columns={'polygon':'geometry'}, inplace=True)
         return  geos_df
+    
+    def distance_geos(self, g1_id:int, g2_id:int):
+        key = frozenset([g1_id, g2_id])
+        if self.dist_geos is None:
+            self.dist_geos = {}
+        if key not in self.dist_geos: # try cache
+            self.dist_geos[key] = self.geos[g1_id].distance(self.geos[g2_id])
+        
+        return self.dist_geos[key]
 
 # instance classes 
+# TODO merge this classes !! issue #6
 class Warehouse(BaseModel):
     id: int 
     lat: float
     lng: float
     geo_id: Optional[int]
+    is_drop: bool = False 
+    is_warehouse: bool = True 
 
     @property
     def sid(self) -> str:
         return 'w' + str(self.id)
     @property
     def point(self):
-        return Point(self.lng,self.lat)
+        return Point(self.lng, self.lat)
+        
 class Drop(BaseModel):
     id: int 
     lat: float
@@ -118,6 +134,8 @@ class Drop(BaseModel):
     req_date: date
     schedule_date: Optional[date]
     geo_id: Optional[int]
+    is_drop: bool = True
+    is_warehouse: bool = False 
 
     @property
     def sid(self)-> str:
@@ -131,17 +149,50 @@ class Drop(BaseModel):
     def warehouse_sid(self)-> str:
         return 'w' + str(self.warehouse_id)
     
+    
+class Route(BaseModel):
+    id: Optional[int]
+    nodes: List[Union[Drop,Warehouse]]
+    city: City
+    
+    @property
+    def ft_size(self) -> float:
+        return len(self.nodes)    
+
+    @property
+    def ft_size_drops(self) -> float:
+        return len([node for node in self.nodes if node.is_drop])
+    
+    @property
+    def ft_size_pickups(self) -> float:
+        return len([node for node in self.nodes if node.is_warehouse])
+
+    @property
+    def ft_size_geo(self) -> float:
+        return len(self.geos)
+    
+    @property
+    def ft_inter_geo_dist(self) -> float:
+        return sum([self.city.distance_geos(g1,g2) for  g1,g2 in it.combinations(self.geos, 2)])
+
+    @property
+    def geos(self)-> List[int]:
+        return list(set([node.geo_id for node in self.nodes]))
+    
+    def ft_has_geo(self, geo_id:int) -> float:
+        return 1.0 if geo_id in self.geos else 0
+
+    def make_fake(self):
+        raise NotImplemented('Not Implemented')
+
+
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id', 'req_date']
-
 class RoutingInstance(BaseModel):
     warehouses_dict: Dict[int,Warehouse]
     drops_dict: Dict[int,Drop]
     city: City
     
-    # cache_distance 
-    dist_geos: Optional[Dict[frozenset, float]]
-
     # solution variables
     sol_cluster:   Optional[List[Dict[str,Union[int,object]]]] # [{node_sid:cluster(int)}]
     sol_arcs_list: Optional[List[Dict[str,Union[int,str]]]] # list arcs {gi,gj,cluster}
@@ -264,15 +315,9 @@ class RoutingInstance(BaseModel):
             return self.drops_dict[int(sid[1:])]
         else:
             return None
-    
+
     def distance_geos(self, g1_id:int, g2_id:int):
-        key = frozenset([g1_id, g2_id])
-        if self.dist_geos is None:
-            self.dist_geos = {}
-        if key not in self.dist_geos: # try cache
-            self.dist_geos[key] = self.city.geos[g1_id].distance(self.city.geos[g2_id])
-        
-        return self.dist_geos[key]
+        return self.city.distance_geos(g1_id, g2_id)
 
     def build_features(self, sol_cluster:Optional[List[Dict[str,int]]]=None):
         """infer features based on a solution `self.sol_cluster` : [{node_sid:cluster}]
@@ -309,22 +354,17 @@ class RoutingInstance(BaseModel):
             z[(c,g1.id,g2.id)] = 1 if g1.id in clusters_geo_dict[c] and g2.id in clusters_geo_dict[c] else 0
 
         for c in clusters:
-            ft_size[c]           = len(clusters_node_dict[c])
-            ft_size_drops[c]     = len([nd for nd in clusters_node_dict[c] if 'd' in nd])
-            ft_size_pickups[c]   = len([nd for nd in clusters_node_dict[c] if 'w' in nd])
-            ft_size_geo[c]       = len(clusters_geo_dict[c])
-            
-            
-            # unpack keys (it doesn't work in one line, no clue why )
-            # sum([self.distance_geos(g1,g2)  for (cz,g1,g2) in z.keys() if z[(cz,g1,g2)]==1 and cz == c ])
-            keys = []    
-            for key in z.keys():
-                if key[0] == c and z[key] == 1:
-                    keys.append(key)
-            ft_inter_geo_dist[c] = sum([ self.distance_geos(key[1],key[2]) for key in keys ])
+            route = Route(id = c, 
+                          nodes = [self.get_node_by_sid(nsid) for nsid in clusters_node_dict[c]], 
+                          city = self.city)
+            ft_size[c]           = route.ft_size
+            ft_size_drops[c]     = route.ft_size_drops
+            ft_size_pickups[c]   = route.ft_size_pickups
+            ft_size_geo[c]       = route.ft_size_geo
+            ft_inter_geo_dist[c] = route.ft_inter_geo_dist
         
             for geo in self.geos:
-                ft_has_geo[(c,geo.id)] = 1 if geo.id in clusters_geo_dict[c] else 0
+                ft_has_geo[(c,geo.id)] = route.ft_has_geo(geo.id)
 
             self.sol_features = {'ft_size':ft_size, 
                                  'ft_size_drops':ft_size_drops,
@@ -342,7 +382,7 @@ class RoutingInstance(BaseModel):
                                      'geo_i': tuple_key[1],
                                      'geo_j':tuple_key[2]
                     })                
-            self.sol_arcs_list = arcs_list #Optional[List[Dict[str,Union[int,str]]]]
+            self.sol_arcs_list = arcs_list # Optional[List[Dict[str,Union[int,str]]]]
             
 
     def build_warm_start(self, n_clusters:int, algorithm:str = 'KMeans'):
