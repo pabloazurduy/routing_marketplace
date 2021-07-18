@@ -17,9 +17,9 @@ if __name__ == "__main__":
     routing_instance_prev.fit_betas_time_based()
 
     INSTANCES = ['instance_simulator/real_instances/instance_2021-05-13.csv',
-                'instance_simulator/real_instances/instance_2021-05-24.csv',
-                'instance_simulator/real_instances/instance_2021-05-26.csv',
-                'instance_simulator/real_instances/instance_2021-06-08.csv'
+                #'instance_simulator/real_instances/instance_2021-05-24.csv',
+                #'instance_simulator/real_instances/instance_2021-05-26.csv',
+                #'instance_simulator/real_instances/instance_2021-06-08.csv'
     ]
 
     for instance_path in INSTANCES:

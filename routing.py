@@ -4,18 +4,19 @@ import itertools as it
 import json
 from copy import deepcopy
 from datetime import date
-from typing import Dict, List, Optional, Tuple, Union, Any
+from functools import cached_property
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import mip
 import pandas as pd
 from keplergl import KeplerGl
 from pydantic import BaseModel
 from shapely.geometry import LineString, Point, Polygon, shape
+from sklearn import cluster  # used in eval
 from sklearn import linear_model
-from sklearn import cluster # used in eval
-import mip
 
 from constants import KEPLER_CONFIG
+
 
 # city meta classes 
 class Geo(BaseModel):
@@ -23,6 +24,8 @@ class Geo(BaseModel):
     name: Optional[str]
     polygon: Polygon
     area: Optional[float]
+    class Config:
+        arbitrary_types_allowed = True
 
     @property
     def centroid(self):
@@ -42,8 +45,6 @@ class Geo(BaseModel):
         other_centroid = other.polygon.centroid
         return self_centroid.distance(other_centroid )
     
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class City(BaseModel):
@@ -73,7 +74,7 @@ class City(BaseModel):
 
         return cls(id=id, name_city = name_city, geos=geos)
     
-    def get_geo(self, lat:float, lng:float) -> Optional[Geo]: #TODO latlong to point 
+    def get_geo(self, lat:float, lng:float) -> Optional[Geo]: 
         for geo in self.geos.values():
             if geo.contains(lat, lng):
                 return geo # pointer 
@@ -108,51 +109,54 @@ class City(BaseModel):
         
         return self.dist_geos[key]
 
-# instance classes 
-# TODO merge this classes !! issue #6
-class Warehouse(BaseModel):
+class Node(BaseModel):
     id: int 
-    lat: float
-    lng: float
+    point: Point
     geo_id: Optional[int]
-    is_drop: bool = False 
-    is_warehouse: bool = True 
+    node_type:str # in ['warehouse','drop']  
 
-    @property
-    def sid(self) -> str:
-        return 'w' + str(self.id)
-    @property
-    def point(self):
-        return Point(self.lng, self.lat)
-        
-class Drop(BaseModel):
-    id: int 
-    lat: float
-    lng: float
-    warehouse_id : int
-    store_id : int 
-    req_date: date
+    # only valid for drops 
+    warehouse_id : Optional[int]
+    store_id : Optional[int]
+    req_date: Optional[date]
     schedule_date: Optional[date]
-    geo_id: Optional[int]
-    is_drop: bool = True
-    is_warehouse: bool = False 
+
+    class Config:
+        arbitrary_types_allowed = True
+        keep_untouched = (cached_property,)
+
+    def __init__(self, lat:float, lng:float ,**data) -> None:
+        super().__init__(point = Point(lng, lat), **data)
+
+    @cached_property
+    def sid(self) -> str:
+        return self.node_type[:1] + str(self.id)
 
     @property
-    def sid(self)-> str:
-        return 'd' + str(self.id)
+    def is_drop(self)-> bool:
+        return self.node_type == 'drop'
     
     @property
-    def point(self):
-        return Point(self.lng,self.lat)
+    def is_warehouse(self)-> bool :
+        return self.node_type == 'warehouse'
+
+    @property
+    def lng(self)->float:
+        return self.point.x
+
+    @property
+    def lat(self)->float:
+        return self.point.y
 
     @property
     def warehouse_sid(self)-> str:
+        if self.is_warehouse:
+            raise ValueError('This node is a Warehouse')
         return 'w' + str(self.warehouse_id)
-    
-    
+            
 class Route(BaseModel):
     id: Optional[int]
-    nodes: List[Union[Drop,Warehouse]]
+    nodes: List[Node]
     city: City
     
     @property
@@ -189,8 +193,7 @@ class Route(BaseModel):
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id', 'req_date']
 class RoutingInstance(BaseModel):
-    warehouses_dict: Dict[int,Warehouse]
-    drops_dict: Dict[int,Drop]
+    nodes : List[Node]
     city: City
     
     # solution variables
@@ -206,30 +209,40 @@ class RoutingInstance(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
+        keep_untouched = (cached_property,)
     
-    @property
-    def nodes(self):
-        return list(self.drops_dict.values()) + list(self.warehouses_dict.values())
-
-    @property
+    @cached_property
     def drops(self):
-        return list(self.drops_dict.values())
+        return [node for node in self.nodes if node.is_drop]
 
-    @property
+    @cached_property
     def warehouses(self):
-        return list(self.warehouses_dict.values())
+        return [node for node in self.nodes if node.is_warehouse]
 
     @property
     def drops_df(self):
-        return pd.DataFrame([drop.dict() for drop in self.drops])
+        columns =['id', 'sid', 'lat', 'lng','warehouse_id' ,'store_id',
+                  'req_date','schedule_date','geo_id']
+        rows = []
+        for node in self.drops:
+            rows.append({key: getattr(node,key) for key in columns})
+        return pd.DataFrame(rows)
     
     @property
     def warehouses_df(self):
-        return pd.DataFrame([wh.dict() for wh in self.warehouses])
+        columns =[ 'id','sid' ,'lat','lng','geo_id']
+        rows = []
+        for node in self.warehouses:
+            rows.append({key: getattr(node,key) for key in columns})
+        return pd.DataFrame(rows)
     
-    @property
+    @cached_property
     def geos(self) -> List[Geo]:
         return list(self.city.geos.values())
+    
+    @cached_property
+    def nodes_dict(self) -> Dict[str,Node]:
+        return {node.sid:node for node in self.nodes}
     
     @property
     def mip_has_geo(self) -> Dict[str, float]:
@@ -261,28 +274,29 @@ class RoutingInstance(BaseModel):
         warehouses_list = instance_df[instance_df.is_warehouse].to_dict(orient='records')
         drops_list      = instance_df[~instance_df.is_warehouse].to_dict(orient='records')
         
-        warehouses_dict = {}
+        nodes = []
         for wh_inst in warehouses_list:
             wh_id = wh_inst['pickup_warehouse_id']
-            warehouses_dict[int(wh_id)] = Warehouse(id = wh_id,
-                                                    lat = wh_inst['lat'],
-                                                    lng = wh_inst['lon'],
-                                                    geo_id = city_inst.get_geo_id(wh_inst['lat'], wh_inst['lon'])
-                                                   )
+            nodes.append(Node(id = wh_id,
+                              lat = wh_inst['lat'],
+                              lng = wh_inst['lon'],
+                              geo_id = city_inst.get_geo_id(wh_inst['lat'], wh_inst['lon']),
+                              node_type = 'warehouse'
+                            ))
 
-        drops_dict = {}
         for d_id, drop_inst in enumerate(drops_list):
-            drops_dict[int(d_id)] = Drop(id = d_id,
-                                         lat =drop_inst['lat'],
-                                         lng =drop_inst['lon'],
-                                         warehouse_id = drop_inst['pickup_warehouse_id'],
-                                         store_id = drop_inst['store_id'],
-                                         req_date = drop_inst['req_date'],
-                                         geo_id = city_inst.get_geo_id(drop_inst['lat'],drop_inst['lon'])
-                                        )        
+            nodes.append(Node(id = d_id,
+                              lat =drop_inst['lat'],
+                              lng =drop_inst['lon'],
+                              node_type = 'drop',
+                              warehouse_id = drop_inst['pickup_warehouse_id'],
+                              store_id = drop_inst['store_id'],
+                              req_date = drop_inst['req_date'],
+                              geo_id = city_inst.get_geo_id(drop_inst['lat'],drop_inst['lon'])
+                        ))        
         # remove unused geos 
         used_geos = set()
-        for node in it.chain(warehouses_dict.values(),drops_dict.values()):
+        for node in nodes:
             used_geos.add(node.geo_id)
         
         for geo_id in list(city_inst.geos.keys()):
@@ -303,18 +317,15 @@ class RoutingInstance(BaseModel):
             # remove duplicates
             sol_cluster = [dict(node_t) for node_t in {tuple(node.items()) for node in sol_cluster}]
 
-        return cls(warehouses_dict = warehouses_dict, drops_dict= drops_dict, city = city_inst, sol_cluster = sol_cluster)
+        return cls(nodes = nodes, city = city_inst, sol_cluster = sol_cluster)
     
     def get_geo_by_id(self, geo_id: int) -> Geo:
         return self.city.geos[geo_id]
 
     def get_node_by_sid(self, sid:str):
-        if 'w' in sid:
-            return self.warehouses_dict[int(sid[1:])]
-        elif 'd' in sid:
-            return self.drops_dict[int(sid[1:])]
-        else:
-            return None
+        if sid not in self.nodes_dict:
+            raise ValueError(f'{sid = } not in RoutingInstance.nodes')
+        return self.nodes_dict[sid]
 
     def distance_geos(self, g1_id:int, g2_id:int):
         return self.city.distance_geos(g1_id, g2_id)
@@ -476,11 +487,11 @@ class RoutingInstance(BaseModel):
         for node_c in self.sol_cluster:
             node = self.get_node_by_sid(node_c['node_sid'])
             node_list.append({ 
-              'node_sid': node_c['node_sid'],
+              'node_sid': node.sid,
               'lat': node.lat,
               'lng': node.lng,
               'geo_id': node.geo_id,
-              'node_type': 'drop' if type(node)==Drop else 'warehouse',
+              'node_type': node.node_type,
               'cluster': node_c['cluster']
             })
         cluster_df = pd.DataFrame(node_list)       
