@@ -2,6 +2,7 @@
 
 import itertools as it
 import json
+import random
 from copy import deepcopy
 from datetime import date
 from functools import cached_property
@@ -44,8 +45,15 @@ class Geo(BaseModel):
         self_centroid = self.polygon.centroid
         other_centroid = other.polygon.centroid
         return self_centroid.distance(other_centroid )
-    
 
+    def get_random_point(self)-> Point:
+        xmin, ymin, xmax, ymax = self.polygon.bounds
+        while True:
+            x = random.uniform(xmin, xmax)
+            y = random.uniform(ymin, ymax)
+            point = Point(x, y)
+            if point.within(self.polygon):
+                return point 
 
 class City(BaseModel):
     id: Optional[int]
@@ -158,6 +166,7 @@ class Route(BaseModel):
     id: Optional[int]
     nodes: List[Node]
     city: City
+    price: Optional[float]
     
     @property
     def ft_size(self) -> float:
@@ -182,13 +191,49 @@ class Route(BaseModel):
     @property
     def geos(self)-> List[int]:
         return list(set([node.geo_id for node in self.nodes]))
+
+    @cached_property
+    def centroid(self) -> Point():
+        return Polygon(self.nodes).centroid
     
     def ft_has_geo(self, geo_id:int) -> float:
         return 1.0 if geo_id in self.geos else 0
 
     def make_fake(self):
         raise NotImplemented('Not Implemented')
+    
+    def centroid_distance(self, point:Point) -> float:
+        return self.centroid.distance(point)
 
+    @classmethod
+    def make_fake_best(cls, beta_features:Dict[str,float], ideal_route_len:int, 
+                       beta_price:float, sim_beta_origin:float, geo_origin:Geo, 
+                       price_by_node:float, city:City):
+        
+        nodes = []   
+        whs_point = geo_origin.get_random_point()
+        nodes.append((Node(id = 0,
+                           lat =whs_point.y,
+                           lng =whs_point.x,
+                           node_type = 'warehouse'
+                    )))
+
+        for drop_id in range(ideal_route_len-1):
+            drop_point = geo_origin.get_random_point()
+            nodes.append(Node(id = drop_id,
+                              lat =drop_point.y,
+                              lng =drop_point.x,
+                              node_type = 'drop',
+                              warehouse_id = 0,
+                        ))  
+        price_total_route =  len(nodes)*price_by_node
+        return cls(nodes = nodes,city=city, price= price_total_route )
+
+    @classmethod
+    def make_fake_worst(cls, beta_features:Dict[str,float], ideal_route_len:int, 
+                       beta_price:float, sim_beta_origin:float, geo_origin:Geo, 
+                       price_by_node:float, city:City):
+        pass
 
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id', 'req_date']
