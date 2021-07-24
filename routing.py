@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Data Models + Utilities
 
 import itertools as it
@@ -65,7 +66,7 @@ class City(BaseModel):
 
     @property
     def geos_list(self) -> List[Geo]:
-        return List(self.geos.values())
+        return list(self.geos.values())
     @classmethod
     def from_geojson(cls, geojson_file_path:str, name_city:Optional[str]=None, id:Optional[int]=None):
 
@@ -166,7 +167,11 @@ class Route(BaseModel):
     id: Optional[int]
     nodes: List[Node]
     city: City
-    price: Optional[float]
+    price: Optional[float] # total price for all the route
+    
+    class Config:
+        #arbitrary_types_allowed = True
+        keep_untouched = (cached_property,)
     
     @property
     def ft_size(self) -> float:
@@ -193,8 +198,8 @@ class Route(BaseModel):
         return list(set([node.geo_id for node in self.nodes]))
 
     @cached_property
-    def centroid(self) -> Point():
-        return Polygon(self.nodes).centroid
+    def centroid(self) -> Point:
+        return Polygon([n.point for n in self.nodes]).centroid
     
     def ft_has_geo(self, geo_id:int) -> float:
         return 1.0 if geo_id in self.geos else 0
@@ -208,7 +213,7 @@ class Route(BaseModel):
     @classmethod
     def make_fake_best(cls, beta_features:Dict[str,float], ideal_route_len:int, 
                        beta_price:float, sim_beta_origin:float, geo_origin:Geo, 
-                       price_by_node:float, city:City):
+                       price_by_node:float, city:City) -> Route:
         
         nodes = []   
         whs_point = geo_origin.get_random_point()
@@ -231,9 +236,41 @@ class Route(BaseModel):
 
     @classmethod
     def make_fake_worst(cls, beta_features:Dict[str,float], ideal_route_len:int, 
-                       beta_price:float, sim_beta_origin:float, geo_origin:Geo, 
-                       price_by_node:float, city:City):
-        pass
+                         beta_price:float, sim_beta_origin:float, geo_origin:Geo, 
+                         price_by_node:float, city:City) -> Route:
+
+        num_nodes =  2 * ideal_route_len # this is guaranteed to be <0 
+        num_warehouses =  5 # realistic highest number of warehouses 
+
+        negative_betas = {k:v for k,v in sorted(beta_features.items(),key=lambda item:item[1]) if v<0 and 'ft_has_geo' in k}
+        negative_betas_cycle = it.cycle(negative_betas.items())
+        
+        nodes = []
+        for drop_id in range(num_nodes):
+            beta_name,_ = next(negative_betas_cycle)
+            geo_id = int(beta_name.split('_')[-1])
+            drop_point = city.geos[geo_id].get_random_point()
+            nodes.append(Node(id = drop_id,
+                              lat =drop_point.y,
+                              lng =drop_point.x,
+                              node_type = 'drop',
+                              warehouse_id = 0,
+                        ))
+
+        for wh_id in range(num_warehouses):
+            beta_name,_ = next(negative_betas_cycle)
+            geo_id = int(beta_name.split('_')[-1])
+            drop_point = city.geos[geo_id].get_random_point()
+            nodes.append(Node(id = drop_id,
+                              lat =drop_point.y,
+                              lng =drop_point.x,
+                              node_type = 'warehouse',
+                              warehouse_id = 0,
+                        ))
+        price_total_route =  len(nodes)*price_by_node
+        return cls(nodes = nodes,city=city, price= price_total_route )
+
+
 
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id', 'req_date']
