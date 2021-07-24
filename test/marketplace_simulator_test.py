@@ -20,7 +20,7 @@ class MarketplaceSimulation(unittest.TestCase):
         city = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
         clouder = Clouder.make_fake(id = 1,  
                                     mean_connected_prob=0.3, 
-                                    mean_route_len = 15,
+                                    mean_ideal_route = 15,
                                     mean_beta_features = BETA_INIT,
                                     geo_prob = {geo.id:1.0/len(city.geos) for geo in city.geos_list},
                                     city = city
@@ -30,15 +30,12 @@ class MarketplaceSimulation(unittest.TestCase):
         self.assertTrue(clouder.sim_worst_route_utility < clouder.sim_best_route_utility)
 
     def test_simulate_auction(self):
-        #market = MarketplaceInstance()
-        
-        #markeplace_sim = MarketplaceInstance.build_marketplace_simulation()
-        """
-        self.assertIsInstance(markeplace_sim, pd.DataFrame)
-        columns = ['clouder_id',
-                   'route_id',
-                   'accepted'
-        ]
-        self.asserTrue()
-        """
-        pass 
+        city = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
+
+        market_sim = MarketplaceInstance.build_simulated(num_clouders=100, 
+                                                             city= city, 
+                                                             mean_beta_features=BETA_INIT, 
+                                                             mean_ideal_route=15,
+                                                             mean_connected_prob=0.3
+                                                             )
+        self.assertTrue(market_sim.is_fake)

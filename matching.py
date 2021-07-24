@@ -1,6 +1,6 @@
 from os import stat
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from routing import Geo, City, Route
 import random
 import numpy as np 
@@ -22,7 +22,7 @@ class Clouder(BaseModel):
     sim_best_route_utility: Optional[float]   # high level utility reference 
     
     @classmethod
-    def make_fake(cls,id:int, mean_connected_prob:float, mean_route_len:int, 
+    def make_fake(cls,id:int, mean_connected_prob:float, mean_ideal_route:int, 
                   mean_beta_features:Dict[str,float], geo_prob:Dict[int,float], # geo_id, weight 
                   city:City, seed:int = 1337):
         
@@ -34,7 +34,7 @@ class Clouder(BaseModel):
                                 )[0]
         b_conn_dist = 5 # b parameter (in beta) for connected probability 
         sim_connect_prob = np.random.beta(a = (mean_connected_prob*b_conn_dist)/(1-mean_connected_prob), b =b_conn_dist)
-        sim_ideal_route_len = np.random.poisson(lam = mean_route_len)
+        sim_ideal_route_len = np.random.poisson(lam = mean_ideal_route)
         
         sim_beta_features = {}
         for feat_name in mean_beta_features.keys():
@@ -102,8 +102,16 @@ class Clouder(BaseModel):
         return route_utility
 
 class MarketplaceInstance(BaseModel):
-    clouders:Dict[int,Clouder]
-    
+    clouders_dict:Dict[int,Clouder]
+
+    @property
+    def clouders(self)-> List[Clouder]:
+        return self.clouders_dict.values()
+
+    @property
+    def is_fake(self)->bool:
+        return any(clouder.is_fake for clouder in self.clouders)
+
     @classmethod
     def build_simulated(cls, num_clouders:int, city:City, mean_beta_features:Dict[str,float], 
                         mean_connected_prob:float = 0.3, mean_ideal_route:int = 15):
@@ -114,13 +122,13 @@ class MarketplaceInstance(BaseModel):
         for clouder_id in range(num_clouders):
             fake_clouders_dict[clouder_id] = Clouder.make_fake(id = clouder_id, 
                                                                 mean_connected_prob = mean_connected_prob, 
-                                                                mean_route_len = mean_ideal_route, 
+                                                                mean_ideal_route = mean_ideal_route, 
                                                                 mean_beta_features = mean_beta_features, 
                                                                 geo_prob = geo_prob, 
                                                                 city =city
                                                                 )
 
-        return cls(clouders = fake_clouders_dict)
+        return cls(clouders_dict = fake_clouders_dict)
     
 class Abra(BaseModel):
     pass
