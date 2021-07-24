@@ -25,9 +25,9 @@ class MarketplaceSimulation(unittest.TestCase):
                                     geo_prob = {geo.id:1.0/len(city.geos) for geo in city.geos_list},
                                     city = city
                                     )
-        self.assertIsInstance(clouder.sim_worst_route_utility, float)
-        self.assertIsInstance(clouder.sim_best_route_utility, float)
-        self.assertTrue(clouder.sim_worst_route_utility < clouder.sim_best_route_utility)
+        self.assertIsInstance(clouder.low_utility_ref, float)
+        self.assertIsInstance(clouder.high_utility_ref, float)
+        self.assertTrue(clouder.low_utility_ref < clouder.high_utility_ref)
 
     def test_simulate_auction(self):
         city = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
