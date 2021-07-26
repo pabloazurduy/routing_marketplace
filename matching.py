@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import random
 from os import stat
+from typing import Dict, List, Optional
+
+import numpy as np
+import pandas as pd
 from numpy.random import beta
 from pydantic import BaseModel
-from typing import Dict, Optional, List
-from routing import Geo, City, Route
-import random
-import numpy as np 
 from scipy.special import expit
+from sklearn import linear_model
+
+from routing import City, Geo, Route, RoutingSolution
+
 
 class ClouderSimParams(BaseModel):
     # FakeClouderParams
@@ -118,6 +123,9 @@ class Clouder(BaseModel):
         norm_route_utility = 8/(pi_max-pi_min)*(route_utility-pi_min) - 4
         return expit(norm_route_utility)
 
+class MatchinSolution(BaseModel):
+    pass
+
 class MarketplaceInstance(BaseModel):
     clouders_dict:Dict[int,Clouder]
 
@@ -147,5 +155,47 @@ class MarketplaceInstance(BaseModel):
 
         return cls(clouders_dict = fake_clouders_dict)
     
+    def make_matching(self, routes:RoutingSolution, method:str = 'random') -> MatchingSolution:
+        pass
+
+
 class Abra(BaseModel):
-    pass
+    
+
+    def load_markeplace_data(self, mkp_instance_df:pd.DataFrame) -> None:
+        mkp_instance_df['acceptance_time_min'] =(   pd.to_datetime(mkp_instance_df['route_acceptance_timestamp'])
+                                                  - pd.to_datetime(mkp_instance_df['route_creation_timestamp'])
+                                                ).dt.total_seconds()/60 
+        
+        self.sol_time_performance = mkp_instance_df[['id_route','acceptance_time_min']].to_dict(orient='records')
+    
+    
+    def fit_betas_time_based(self):
+        sol_df = pd.DataFrame(self.sol_time_performance)
+        features_df = pd.DataFrame({k:v for k,v in self.sol_features.items() if k != 'ft_has_geo'} )
+        
+        columns_ft_has_geo = {}    
+        for geo in set([ geo for (clt, geo) in self.sol_features['ft_has_geo'].keys()]):
+            columns_ft_has_geo[f'ft_has_geo_{geo}']={clt:val for (clt,geoi),val in self.sol_features['ft_has_geo'].items() if geoi == geo}
+        ft_has_geo_df = pd.DataFrame(columns_ft_has_geo)
+        features_df = pd.merge(left=features_df, right=ft_has_geo_df, left_index=True, right_index=True)
+
+        features_df['id_route'] = features_df.index
+        train_df = pd.merge(left = sol_df, right = features_df, how='left', on ='id_route')
+
+        model = linear_model.Lasso(alpha=0.1)
+        #linear_model.LassoLars(alpha=.1)
+        #linear_model.Ridge(alpha=.5)
+        x_df = train_df[train_df.columns.difference(['acceptance_time_min', 'id_route'])]
+        model.fit(X = x_df , y = train_df['acceptance_time_min'] )
+        
+        # To print OLS summary  
+        # from statsmodels.api import OLS
+        # result = OLS(train_df['acceptance_time_min'],x_df).fit_regularized('sqrt_lasso')
+        # with open('summary.txt', 'w') as fh:
+        #     fh.write(OLS(train_df['acceptance_time_min'],x_df).fit().summary().as_text())
+        # print(result.params)
+
+        beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}
+        self.beta_dict = beta_dict
+

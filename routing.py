@@ -7,7 +7,8 @@ import random
 from copy import deepcopy
 from datetime import date
 from functools import cached_property
-from typing import Any, Dict, List, Optional, Tuple, Union
+from collections import defaultdict
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import mip
 import pandas as pd
@@ -15,7 +16,7 @@ from keplergl import KeplerGl
 from pydantic import BaseModel
 from shapely.geometry import LineString, Point, Polygon, shape
 from sklearn import cluster  # used in eval
-from sklearn import linear_model
+
 
 from constants import KEPLER_CONFIG
 
@@ -55,7 +56,12 @@ class Geo(BaseModel):
             point = Point(x, y)
             if point.within(self.polygon):
                 return point 
-
+    
+    def __eq__(self, other: Any) -> bool:
+        if type(other) == Geo:
+            return self.id == other.id
+        else: 
+            return False
 class City(BaseModel):
     id: Optional[int]
     name_city: Optional[str]
@@ -170,7 +176,7 @@ class Route(BaseModel):
     price: Optional[float] # total price for all the route
     
     class Config:
-        #arbitrary_types_allowed = True
+        arbitrary_types_allowed = True
         keep_untouched = (cached_property,)
     
     @property
@@ -193,9 +199,13 @@ class Route(BaseModel):
     def ft_inter_geo_dist(self) -> float:
         return sum([self.city.distance_geos(g1,g2) for  g1,g2 in it.combinations(self.geos, 2)])
 
-    @property
+    @cached_property
     def geos(self)-> List[int]:
         return list(set([node.geo_id for node in self.nodes]))
+
+    @cached_property
+    def arc_list(self) -> List[Tuple[Geo,Geo]]:
+        return [(g1,g2) for g1,g2 in it.combinations(self.city.geos_list, 2) if g1.id in self.geos and g2.id in self.geos]
 
     @cached_property
     def centroid(self) -> Point:
@@ -203,6 +213,9 @@ class Route(BaseModel):
     
     def ft_has_geo(self, geo_id:int) -> float:
         return 1.0 if geo_id in self.geos else 0
+
+    def has_node_sid(self, sid:str)-> bool:
+        return sid in [node.sid for node in self.nodes]
 
     def make_fake(self):
         raise NotImplemented('Not Implemented')
@@ -270,24 +283,101 @@ class Route(BaseModel):
         price_total_route =  len(nodes)*price_by_node
         return cls(nodes = nodes,city=city, price= price_total_route )
 
+class RoutingSolution(BaseModel):
+    routes: List[Route]
+    city: City 
+
+    class Config:
+        arbitrary_types_allowed = True
+        keep_untouched = (cached_property,)
 
 
+    @property
+    def mip_has_geo(self) -> Dict[str, float]:
+        ft_has_geo = {}
+        for route,geo in it.product(self.routes, self.city.geos_list):
+            ft_has_geo[f'has_geo_{route.id}_{geo.id}'] = route.ft_has_geo(geo.id) #return float
+        return ft_has_geo
+    
+    @property
+    def mip_y(self) -> Dict[str, float]:
+        mip_y = {}
+        for route, node_sid in it.product(self.routes, self.all_nodes_sid):
+            mip_y[f'y_{route.id}_{node_sid}'] = 1.0 if route.has_node_sid(node_sid) else 0.0
+        return mip_y
+    
+    @property
+    def mip_z(self) -> Dict[str, float]:
+        mip_z = {}
+        for route, (geo_i, geo_j) in it.product(self.routes,it.combinations(self.city.geos_list, 2)):
+            mip_z[f'z_{route.id}_{geo_i.id}_{geo_j.id}'] = 1.0 if (geo_i,geo_j) in route.arc_list else 0.0 
+        return mip_z
+    
+    @cached_property
+    def all_nodes_sid(self) -> List[str]:
+        nodes = list((it.chain.from_iterable([route.nodes for route in self.routes])))
+        nodes_sid = list(set([node.sid for node in nodes]))
+        return nodes_sid
+
+    @cached_property
+    def routes_dict(self) -> Dict[int, Route]:
+        return {route.id:route for route in self.routes}
+
+    @property           
+    def cluster_df(self) -> pd.DataFrame:
+        node_list = []
+        for route in self.routes: 
+            for node in route.nodes:
+                node_list.append({ 
+                'node_sid': node.sid,
+                'lat': node.lat,
+                'lng': node.lng,
+                'geo_id': node.geo_id,
+                'node_type': node.node_type,
+                'cluster': route.id
+                })
+        cluster_df = pd.DataFrame(node_list)       
+        return cluster_df
+    
+    @property
+    def inter_geo_df(self)-> pd.DataFrame:
+        arcs_list = []
+        for route in self.routes:
+            for geo_i, geo_j in route.arc_list:
+                line = LineString([geo_i.centroid, geo_j.centroid]).wkt
+                arcs_list.append({'geo_i': geo_i.id,
+                                  'geo_j': geo_j.id,
+                                  'cluster': route.id,
+                                  'shape': line
+                })
+        return pd.DataFrame(arcs_list)
+    
+    def plot(self, file_name='plot_map.html'):
+        # get data 
+        geos_layer_df    = self.city.to_gpd()
+        cluster_layer_df = self.cluster_df
+        inter_geo_df     = self.inter_geo_df
+
+        # build map
+        out_map = KeplerGl(height=400, config=KEPLER_CONFIG)
+        # load data
+        out_map.add_data(data=geos_layer_df, name='geos')
+        out_map.add_data(data=cluster_layer_df, name='cluster')
+        out_map.add_data(data=inter_geo_df, name='inter_geo')
+
+        out_map.save_to_html(file_name=file_name)
+
+
+
+# TODO change this for a pandera schema
+# https://pandera.readthedocs.io/en/stable/schema_models.html
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id', 'req_date']
+
 class RoutingInstance(BaseModel):
     nodes : List[Node]
     city: City
-    
-    # solution variables
-    sol_cluster:   Optional[List[Dict[str,Union[int,object]]]] # [{node_sid:cluster(int)}]
-    sol_arcs_list: Optional[List[Dict[str,Union[int,str]]]] # list arcs {gi,gj,cluster}
-    sol_features:  Optional[Dict[str,Dict[int,float]]] # list dict{cluster: value_feature}
-    sol_y : Optional[Dict[Tuple[Any, Any], int]] # [{node_sid:cluster(int)}]
-    sol_z : Optional[Dict[Tuple[Any, Any, Any], int]] # [{():cluster(int)}]
-
-    # markeplace_performance
-    sol_time_performance: Optional[List[Dict[str,float]]]
-    beta_dict: Optional[Dict[str,float]] # {'feat_name': beta_coef} 
+    solution: Optional[RoutingSolution]
 
     class Config:
         arbitrary_types_allowed = True
@@ -326,17 +416,6 @@ class RoutingInstance(BaseModel):
     def nodes_dict(self) -> Dict[str,Node]:
         return {node.sid:node for node in self.nodes}
     
-    @property
-    def mip_has_geo(self) -> Dict[str, float]:
-        return {f'has_geo_{k[0]}_{k[1]}':v for k,v in self.sol_features['ft_has_geo'].items()}
-    
-    @property
-    def mip_y(self) -> Dict[str, float]:
-        return {f'y_{k[1]}_{k[0]}':v for (k,v) in self.sol_y.items()}
-    
-    @property
-    def mip_z(self) -> Dict[str, float]:
-        return {f'z_{k[0]}_{k[1]}_{k[2]}':v for (k,v) in self.sol_z.items()}
 
     @classmethod
     def load_instance(cls, instance_df = pd.DataFrame):
@@ -356,7 +435,7 @@ class RoutingInstance(BaseModel):
         warehouses_list = instance_df[instance_df.is_warehouse].to_dict(orient='records')
         drops_list      = instance_df[~instance_df.is_warehouse].to_dict(orient='records')
         
-        nodes = []
+        nodes:List[Node] = []
         for wh_inst in warehouses_list:
             wh_id = wh_inst['pickup_warehouse_id']
             nodes.append(Node(id = wh_id,
@@ -367,6 +446,7 @@ class RoutingInstance(BaseModel):
                             ))
 
         for d_id, drop_inst in enumerate(drops_list):
+            drop_inst['id'] = d_id # modify dict on the fly 
             nodes.append(Node(id = d_id,
                               lat =drop_inst['lat'],
                               lng =drop_inst['lon'],
@@ -375,7 +455,8 @@ class RoutingInstance(BaseModel):
                               store_id = drop_inst['store_id'],
                               req_date = drop_inst['req_date'],
                               geo_id = city_inst.get_geo_id(drop_inst['lat'],drop_inst['lon'])
-                        ))        
+                        ))  
+
         # remove unused geos 
         used_geos = set()
         for node in nodes:
@@ -385,21 +466,20 @@ class RoutingInstance(BaseModel):
             if geo_id not in used_geos:
                 city_inst.remove_geo(geo_id)
         
-        sol_cluster = None
         # if solution in df then load
-        if 'id_route' in instance_df.columns:
-            sol_cluster = []
-            for d_id, drop_inst in enumerate(drops_list):
-                sol_cluster.append({'node_sid':f'd{d_id}',
-                                    'cluster':int(drop_inst['id_route'])
-                })
-                sol_cluster.append({'node_sid':f'w{drop_inst["pickup_warehouse_id"]}',
-                                    'cluster':     int(drop_inst['id_route'])
-                })
-            # remove duplicates
-            sol_cluster = [dict(node_t) for node_t in {tuple(node.items()) for node in sol_cluster}]
-
-        return cls(nodes = nodes, city = city_inst, sol_cluster = sol_cluster)
+        if 'id_route' not in instance_df.columns:
+            solution = None
+        else: 
+            route_solution_list: List[Route] = []
+            for id_route in instance_df['id_route'].dropna().unique():
+                drops_ids = [drop_inst['id'] for drop_inst in drops_list if drop_inst['id_route'] == id_route]
+                whs_ids   = [drop_inst['pickup_warehouse_id'] for drop_inst in drops_list if drop_inst['id_route'] == id_route]
+                route_nodes = [node for node in nodes if (node.id in drops_ids and node.node_type == 'drop') or 
+                                                         (node.id in whs_ids and node.node_type == 'warehouse')]
+                route_solution_list.append(Route(id=int(id_route) ,city=city_inst, nodes=route_nodes))
+            solution = RoutingSolution(routes=route_solution_list, city=city_inst)
+        
+        return cls(nodes = nodes, city = city_inst, solution=solution)
     
     def get_geo_by_id(self, geo_id: int) -> Geo:
         return self.city.geos[geo_id]
@@ -412,81 +492,21 @@ class RoutingInstance(BaseModel):
     def distance_geos(self, g1_id:int, g2_id:int):
         return self.city.distance_geos(g1_id, g2_id)
 
-    def build_features(self, sol_cluster:Optional[List[Dict[str,int]]]=None):
-        """infer features based on a solution `self.sol_cluster` : [{node_sid:cluster}]
-
-        Raises:
-            ValueError: [description]
-        """
-        #check if solution 
-        if not self.sol_cluster and not sol_cluster: 
-            raise ValueError('No Solution added yet, try using "routing_instance.get_warm_start()" method before')
+    def build_warm_start(self, n_clusters:int, 
+                         algorithm:Literal['KMeans','SpectralClustering', 'AgglomerativeClustering'] = 'KMeans') -> RoutingSolution:
         
-        if self.sol_cluster and not sol_cluster:
-            sol_cluster = deepcopy(self.sol_cluster)
+        """Get a RoutingSolution for this RoutingInstance based on a heuristic approach
 
-        clusters_df = pd.DataFrame(sol_cluster)
-        clusters_node_dict = clusters_df.groupby('cluster')['node_sid'].apply(list).to_dict()
-        clusters_geo_dict = {c:set([self.get_node_by_sid(n).geo_id for n in nodes]) for (c,nodes) in clusters_node_dict.items()}
-        clusters = list(clusters_node_dict.keys())
+        Args:
+            n_clusters (int): umber of routers or clusters needed 
+            algorithm (Literal[, optional): Clustering Algorithm (). Defaults to 'KMeans'.
 
-        # features
-        y = {} 
-        z = {}
-        ft_size = {}
-        ft_size_drops = {}
-        ft_size_pickups = {}
-        ft_has_geo = {}
-        ft_size_geo = {}
-        ft_inter_geo_dist = {}
+        Returns:
+            RoutingSolution: [description]
+        """                
         
-        for node,c in it.product(self.nodes, clusters): 
-            y[(node.sid,c)] = 1 if node.sid in clusters_node_dict[c] else 0
-
-        for c,(g1,g2) in it.product(clusters, it.combinations(self.geos, 2)):
-            z[(c,g1.id,g2.id)] = 1 if g1.id in clusters_geo_dict[c] and g2.id in clusters_geo_dict[c] else 0
-
-        for c in clusters:
-            route = Route(id = c, 
-                          nodes = [self.get_node_by_sid(nsid) for nsid in clusters_node_dict[c]], 
-                          city = self.city)
-            ft_size[c]           = route.ft_size
-            ft_size_drops[c]     = route.ft_size_drops
-            ft_size_pickups[c]   = route.ft_size_pickups
-            ft_size_geo[c]       = route.ft_size_geo
-            ft_inter_geo_dist[c] = route.ft_inter_geo_dist
-        
-            for geo in self.geos:
-                ft_has_geo[(c,geo.id)] = route.ft_has_geo(geo.id)
-
-            self.sol_features = {'ft_size':ft_size, 
-                                 'ft_size_drops':ft_size_drops,
-                                 'ft_size_pickups':ft_size_pickups,
-                                 'ft_has_geo':ft_has_geo,
-                                 'ft_size_geo':ft_size_geo,
-                                 'ft_inter_geo_dist':ft_inter_geo_dist }
-            self.sol_y = y
-            self.sol_z = z
-
-            arcs_list = []
-            for tuple_key in z.keys():
-                if z[tuple_key] == 1:
-                    arcs_list.append({'cluster':tuple_key[0],
-                                     'geo_i': tuple_key[1],
-                                     'geo_j':tuple_key[2]
-                    })                
-            self.sol_arcs_list = arcs_list # Optional[List[Dict[str,Union[int,str]]]]
-            
-
-    def build_warm_start(self, n_clusters:int, algorithm:str = 'KMeans'):
-        
-        # clustering
-        allowed_algo = ['KMeans','SpectralClustering', 'AgglomerativeClustering']
         clusters = range(n_clusters)
         drops_df = self.drops_df.copy()
-        
-        if algorithm not in allowed_algo:
-            raise ValueError(f'{algorithm} not in allowed values {allowed_algo}')
 
         cluster_model = eval(f'cluster.{algorithm}(n_clusters={n_clusters})')    
         drops_df['cluster'] = cluster_model.fit_predict(drops_df[['lat', 'lng']])
@@ -496,137 +516,38 @@ class RoutingInstance(BaseModel):
                                              'id':'wh_id'})
         drops_df = pd.merge(left=drops_df,right= warehouses_df, 
                             left_on='warehouse_id', right_on='wh_id', how='left')
-        sol_cluster = []
+
+        routes_sid:Dict[int, List[str]] = defaultdict(list)        
         for drop in drops_df.itertuples():
-            sol_cluster.append({'node_sid':f'd{drop.id}',
-                                'cluster' :int(drop.cluster)
-            })
-            sol_cluster.append({'node_sid':f'w{drop.warehouse_id}',
-                                'cluster' :int(drop.cluster)
-            })
-        # remove duplicates
-        sol_cluster = [dict(node_t) for node_t in {tuple(node.items()) for node in sol_cluster}]
-        self.sol_cluster = sol_cluster
+            routes_sid[int(drop.cluster)].append(f'd{drop.id}')
+            routes_sid[int(drop.cluster)].append(f'w{drop.warehouse_id}')                                
+
+        routes:List[Route] = []
+        for route_id in drops_df['cluster'].unique():
+            nodes_list = [self.get_node_by_sid(sid) for sid in set(routes_sid[route_id])]
+            routes.append(Route(id=route_id, city =  self.city, nodes = nodes_list))
+
+        return RoutingSolution(routes=routes, city=self.city)
         
-
-    def load_solution_mip_vars(self, y:Dict[Tuple[Any, Any],mip.Var], z:Dict[Tuple[Any,Any,Any],mip.Var]) -> None:
-        sol_cluster = []
-        for tuple_key in y.keys():
-            if y[tuple_key].x == 1:
-                # if node in cluster
-                sol_cluster.append({'node_sid': tuple_key[0],
-                                    'cluster':int(tuple_key[1])
-                })  
-        self.sol_cluster = sol_cluster
-
-        arcs_list = []
-        for tuple_key in z.keys():
-            if z[tuple_key].x == 1:
-                arcs_list.append({'cluster':tuple_key[0],
-                                  'geo_i': tuple_key[1],
-                                  'geo_j':tuple_key[2]
-                })                
-        self.sol_arcs_list = arcs_list
-    
-    def load_markeplace_data(self, mkp_instance_df:pd.DataFrame) -> None:
-        mkp_instance_df['acceptance_time_min'] =(   pd.to_datetime(mkp_instance_df['route_acceptance_timestamp'])
-                                                  - pd.to_datetime(mkp_instance_df['route_creation_timestamp'])
-                                                ).dt.total_seconds()/60 
-        
-        self.sol_time_performance = mkp_instance_df[['id_route','acceptance_time_min']].to_dict(orient='records')
-
-    def fit_betas_time_based(self):
-        sol_df = pd.DataFrame(self.sol_time_performance)
-        features_df = pd.DataFrame({k:v for k,v in self.sol_features.items() if k != 'ft_has_geo'} )
-        
-        columns_ft_has_geo = {}    
-        for geo in set([ geo for (clt, geo) in self.sol_features['ft_has_geo'].keys()]):
-            columns_ft_has_geo[f'ft_has_geo_{geo}']={clt:val for (clt,geoi),val in self.sol_features['ft_has_geo'].items() if geoi == geo}
-        ft_has_geo_df = pd.DataFrame(columns_ft_has_geo)
-        features_df = pd.merge(left=features_df, right=ft_has_geo_df, left_index=True, right_index=True)
-
-        features_df['id_route'] = features_df.index
-        train_df = pd.merge(left = sol_df, right = features_df, how='left', on ='id_route')
-
-        model = linear_model.Lasso(alpha=0.1)
-        #linear_model.LassoLars(alpha=.1)
-        #linear_model.Ridge(alpha=.5)
-        x_df = train_df[train_df.columns.difference(['acceptance_time_min', 'id_route'])]
-        model.fit(X = x_df , y = train_df['acceptance_time_min'] )
-        
-        # To print OLS summary  
-        # from statsmodels.api import OLS
-        # result = OLS(train_df['acceptance_time_min'],x_df).fit_regularized('sqrt_lasso')
-        # with open('summary.txt', 'w') as fh:
-        #     fh.write(OLS(train_df['acceptance_time_min'],x_df).fit().summary().as_text())
-        # print(result.params)
-
-        beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}
-        self.beta_dict = beta_dict
-
-    def get_cluster_df(self):
-        node_list = []
-        for node_c in self.sol_cluster:
-            node = self.get_node_by_sid(node_c['node_sid'])
-            node_list.append({ 
-              'node_sid': node.sid,
-              'lat': node.lat,
-              'lng': node.lng,
-              'geo_id': node.geo_id,
-              'node_type': node.node_type,
-              'cluster': node_c['cluster']
-            })
-        cluster_df = pd.DataFrame(node_list)       
-        return cluster_df
-    
-    def get_inter_geo_df(self):
-        arcs_list = []
-        for arc in self.sol_arcs_list:
-            geo_i = self.city.geos[arc['geo_i']]
-            geo_j = self.city.geos[arc['geo_j']]
-            line = LineString([geo_i.centroid, geo_j.centroid]).wkt
-            arcs_list.append({'geo_i': arc['geo_i'],
-                              'geo_j': arc['geo_j'],
-                              'cluster': arc['cluster'],
-                              'shape': line
-            })
-        return pd.DataFrame(arcs_list)
-    
-    def plot(self, file_name='plot_map.html'):
-        # get data 
-        geos_layer_df    = self.city.to_gpd()
-        cluster_layer_df = self.get_cluster_df()
-        inter_geo_df     = self.get_inter_geo_df()
-
-        # build map
-        out_map = KeplerGl(height=400, config=KEPLER_CONFIG)
-        # load data
-        out_map.add_data(data=geos_layer_df, name='geos')
-        out_map.add_data(data=cluster_layer_df, name='cluster')
-        out_map.add_data(data=inter_geo_df, name='inter_geo')
-
-        out_map.save_to_html(file_name=file_name)
-
-
 class Geodude(BaseModel):
-    
-    @staticmethod
-    def run_opt_model(routing_instance:RoutingInstance, beta_dict:dict, max_time:int = 30 ):
+    routing_instance:RoutingInstance
+    beta_dict:dict
+
+    def solve(self, max_time_min:int = 30, n_clusters:int = 25 ):
+        # max number of clusters ? TODO: there should be a Z* equivalent way of modeling this problem 
+        clusters = range(n_clusters)
+        routing_instance = self.routing_instance
+        beta_dict = self.beta_dict
         # ============================ # 
         # ==== optimization model ==== #
         # ============================ # 
-
         model = mip.Model(name = 'clustering')
         # Instance Parameters 
-        n_clusters = 25 # max number of clusters ? TODO: there should be a Z* equivalent way of modeling this problem 
-        clusters = range(n_clusters)
-
         # var declaration
         print('var declaration')
         y = {} # cluster variables 
         for node,c in it.product(routing_instance.nodes, clusters): # in cluster var
             y[(node.sid,c)] = model.add_var(var_type = mip.BINARY , name = f'y_{c}_{node.sid}')
-
 
         z = {} # distance variables 
         for c,(g1,g2) in it.product(clusters, it.combinations(routing_instance.geos, 2)): # unique combinations  
@@ -720,12 +641,24 @@ class Geodude(BaseModel):
                                     for geo, c in it.product(routing_instance.geos,clusters)]                            
                                     )
 
-        model.max_seconds = 60 * max_time # min 
+        model.max_seconds = 60 * max_time_min 
+        
         # get a warm start 
-        routing_instance.build_warm_start(n_clusters)
-        routing_instance.build_features()
-        warm_start = routing_instance.mip_y | routing_instance.mip_z | routing_instance.mip_has_geo
-        start_list = [(model.var_by_name(var_name), value_start) for (var_name, value_start) in warm_start.items()]
+        warm_start_sol = routing_instance.build_warm_start(n_clusters)
+        warm_start_dict = warm_start_sol.mip_y | warm_start_sol.mip_z | warm_start_sol.mip_has_geo
+        start_list:List[Tuple[mip.Var, float]] = []
+        for (var_name, value_start) in warm_start_dict.items():
+            w_var = model.var_by_name(var_name)
+            if w_var:
+                start_list.append((w_var, value_start))
+            else:
+                raise ValueError('warm start is missing some variables')
+        y_vars =  [var.name for var in y.values()] 
+        assert sorted(y_vars) == sorted(list(warm_start_sol.mip_y.keys())), 'error'
+        z_vars =  [var.name for var in z.values()] 
+        assert sorted(z_vars) == sorted(list(warm_start_sol.mip_z.keys())), 'error'
+        has_geo_vars =  [var.name for var in ft_has_geo.values()] 
+        assert sorted(has_geo_vars) == sorted(list(warm_start_sol.mip_has_geo.keys())), 'error'
 
         print('validating start')
         model.start = start_list 
@@ -747,4 +680,28 @@ class Geodude(BaseModel):
         for c in clusters:
             print(f'{c = }, {ft_size_geo[c].x = }, {ft_size_drops[c].x = }, {ft_size_drops[c].x = }, {ft_size_pickups[c].x = }, {ft_inter_geo_dist[c].x = }')
 
-        routing_instance.load_solution_mip_vars(y = y, z = z)
+        return self.build_routing_sol(routing_instance=routing_instance, y = y)
+    
+    def build_routing_sol(self,routing_instance:RoutingInstance, y:Dict[Tuple[str, Any],mip.Var]) -> RoutingSolution:
+        """based on y dict get a RoutingSolution Object
+
+        Args:
+            routing_instance (RoutingInstance): [description]
+            y (Dict[Tuple[str, Any],mip.Var]): [description]
+
+        Returns:
+            RoutingSolution: [description]
+        """        
+        
+        routes_sid: Dict[int, List[str]] =  defaultdict(list)
+        for tuple_key in y.keys():
+            if y[tuple_key].x == 1:
+                routes_sid[int(tuple_key[1])].append(tuple_key[0])
+        
+        routes:List[Route] = [] 
+        for route_id in routes_sid.keys():
+            nodes = [routing_instance.get_node_by_sid(sid) for sid in set(routes_sid[route_id])]
+            routes.append(Route(id = route_id, nodes=nodes, city = routing_instance.city))
+
+        return RoutingSolution(routes=routes, city=routing_instance.city)
+
