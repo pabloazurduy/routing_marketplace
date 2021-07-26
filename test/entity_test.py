@@ -49,7 +49,7 @@ class RoutingTest(unittest.TestCase):
         warm_start =  routing_instance.build_warm_start(n_clusters = 50)
         self.assertIsInstance(warm_start, RoutingSolution)
     
-    #@unittest.skip("slow test")
+    @unittest.skip("slow test")
     def test_geodude(self):
         instance_df = pd.read_csv('instance_simulator/real_instances/instance_2021-05-13.csv', sep=';')
         routing_instance = RoutingInstance.load_instance(instance_df)
