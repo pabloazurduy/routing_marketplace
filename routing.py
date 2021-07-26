@@ -17,8 +17,7 @@ from pydantic import BaseModel
 from shapely.geometry import LineString, Point, Polygon, shape
 from sklearn import cluster  # used in eval
 
-
-from constants import KEPLER_CONFIG
+from constants import KEPLER_CONFIG, BETA_INIT
 
 
 # city meta classes 
@@ -199,6 +198,9 @@ class Route(BaseModel):
     def ft_inter_geo_dist(self) -> float:
         return sum([self.city.distance_geos(g1,g2) for  g1,g2 in it.combinations(self.geos, 2)])
 
+    def ft_has_geo(self, geo_id:int) -> float:
+        return 1.0 if geo_id in self.geos else 0
+
     @cached_property
     def geos(self)-> List[int]:
         return list(set([node.geo_id for node in self.nodes]))
@@ -211,8 +213,6 @@ class Route(BaseModel):
     def centroid(self) -> Point:
         return Polygon([n.point for n in self.nodes]).centroid
     
-    def ft_has_geo(self, geo_id:int) -> float:
-        return 1.0 if geo_id in self.geos else 0
 
     def has_node_sid(self, sid:str)-> bool:
         return sid in [node.sid for node in self.nodes]
@@ -290,7 +290,17 @@ class RoutingSolution(BaseModel):
     class Config:
         arbitrary_types_allowed = True
         keep_untouched = (cached_property,)
-
+    
+    @property
+    def features_df(self)-> pd.DataFrame:
+        features = ['ft_size','ft_size_drops','ft_size_pickups','ft_size_geo','ft_inter_geo_dist']
+        routes_feat_list:List[Dict[str, float]] = []
+        for route in self.routes:
+            route_features = {feat:getattr(route, feat) for feat in features}
+            route_features.update({f'ft_has_geo_{geo_id}':route.ft_has_geo(geo_id) for geo_id in self.city.geos.keys()})
+            route_features['id_route'] = route.id 
+            routes_feat_list.append(route_features)
+        return pd.DataFrame(routes_feat_list)
 
     @property
     def mip_has_geo(self) -> Dict[str, float]:
@@ -372,7 +382,7 @@ class RoutingSolution(BaseModel):
 # TODO change this for a pandera schema
 # https://pandera.readthedocs.io/en/stable/schema_models.html
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
-                       'lat', 'pickup_warehouse_id', 'req_date']
+                       'lat', 'pickup_warehouse_id']
 
 class RoutingInstance(BaseModel):
     nodes : List[Node]
@@ -453,7 +463,7 @@ class RoutingInstance(BaseModel):
                               node_type = 'drop',
                               warehouse_id = drop_inst['pickup_warehouse_id'],
                               store_id = drop_inst['store_id'],
-                              req_date = drop_inst['req_date'],
+                              req_date = drop_inst.get('req_date',None),
                               geo_id = city_inst.get_geo_id(drop_inst['lat'],drop_inst['lon'])
                         ))  
 
@@ -528,16 +538,26 @@ class RoutingInstance(BaseModel):
             routes.append(Route(id=route_id, city =  self.city, nodes = nodes_list))
 
         return RoutingSolution(routes=routes, city=self.city)
-        
+
+class BetaMarket(BaseModel):
+    beta_dict:Dict[str,float]
+
+    @classmethod
+    def default(cls):
+        return cls(beta_dict = BETA_INIT)
+
+    @property
+    def dict(self):
+        return self.beta_dict        
 class Geodude(BaseModel):
     routing_instance:RoutingInstance
-    beta_dict:dict
+    beta_market:BetaMarket
 
     def solve(self, max_time_min:int = 30, n_clusters:int = 25 ):
         # max number of clusters ? TODO: there should be a Z* equivalent way of modeling this problem 
         clusters = range(n_clusters)
         routing_instance = self.routing_instance
-        beta_dict = self.beta_dict
+        beta_dict = self.beta_market.dict
         # ============================ # 
         # ==== optimization model ==== #
         # ============================ # 

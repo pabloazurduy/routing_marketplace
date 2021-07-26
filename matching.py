@@ -11,7 +11,8 @@ from pydantic import BaseModel
 from scipy.special import expit
 from sklearn import linear_model
 
-from routing import City, Geo, Route, RoutingSolution
+from routing import City, Geo, Route, RoutingSolution, BetaMarket
+
 
 
 class ClouderSimParams(BaseModel):
@@ -25,8 +26,9 @@ class ClouderSimParams(BaseModel):
     best_route: Route   # high level utility reference 
 
     @classmethod
-    def build(cls, seed:int, mean_connected_prob:float, mean_ideal_route:int, mean_beta_features:Dict[str,float],
+    def build(cls, seed:int, mean_connected_prob:float, mean_ideal_route:int, mean_beta_features:BetaMarket,
              geo_origin:Geo, city:City) -> ClouderSimParams:
+        mean_beta_features_dict = mean_beta_features.dict 
         np.random.seed(seed)
 
         b_conn_dist = 5 # b parameter (in beta) for connected probability 
@@ -34,9 +36,9 @@ class ClouderSimParams(BaseModel):
         ideal_route_len = np.random.poisson(lam = mean_ideal_route)
         
         beta_features = {}
-        for feat_name in mean_beta_features.keys():
-            mean_param = abs(mean_beta_features[feat_name])
-            beta_features[feat_name] =np.sign(mean_beta_features[feat_name]) * np.random.gamma(shape =  mean_param, scale = 1) # E(X) = shape*scale 
+        for feat_name in mean_beta_features_dict.keys():
+            mean_param = abs(mean_beta_features_dict[feat_name])
+            beta_features[feat_name] =np.sign(mean_beta_features_dict[feat_name]) * np.random.gamma(shape =  mean_param, scale = 1) # E(X) = shape*scale 
         
         beta_origin = min(beta_features.values()) # min value from all features 
         beta_price = np.random.gamma(shape =  10, scale = 1)
@@ -79,7 +81,7 @@ class Clouder(BaseModel):
 
     @classmethod
     def make_fake(cls,id:int, mean_connected_prob:float, mean_ideal_route:int, 
-                  mean_beta_features:Dict[str,float], geo_prob:Dict[int,float], # geo_id, weight 
+                  mean_beta_features:BetaMarket, geo_prob:Dict[int,float], # geo_id, weight 
                   city:City, seed:int = 1337):
         
         random.seed(seed)
@@ -138,7 +140,7 @@ class MarketplaceInstance(BaseModel):
         return any(clouder.is_fake for clouder in self.clouders)
 
     @classmethod
-    def build_simulated(cls, num_clouders:int, city:City, mean_beta_features:Dict[str,float], 
+    def build_simulated(cls, num_clouders:int, city:City, mean_beta_features:BetaMarket, 
                         mean_connected_prob:float = 0.3, mean_ideal_route:int = 15):
         
         geo_prob = {geo.id:1.0/len(city.geos) for geo in city.geos_list}
@@ -158,29 +160,17 @@ class MarketplaceInstance(BaseModel):
     def make_matching(self, routes:RoutingSolution, method:str = 'random') -> MatchingSolution:
         pass
 
-
 class Abra(BaseModel):
-    
+    @staticmethod    
+    def fit_betas_time_based(routing_solution:RoutingSolution, acceptance_time_df:pd.DataFrame) -> BetaMarket:
 
-    def load_markeplace_data(self, mkp_instance_df:pd.DataFrame) -> None:
-        mkp_instance_df['acceptance_time_min'] =(   pd.to_datetime(mkp_instance_df['route_acceptance_timestamp'])
-                                                  - pd.to_datetime(mkp_instance_df['route_creation_timestamp'])
+        acceptance_time_df['acceptance_time_min'] =( pd.to_datetime(acceptance_time_df['route_acceptance_timestamp'])
+                                                   - pd.to_datetime(acceptance_time_df['route_creation_timestamp'])
                                                 ).dt.total_seconds()/60 
+        sol_df = pd.DataFrame(acceptance_time_df[['id_route','acceptance_time_min']])        
         
-        self.sol_time_performance = mkp_instance_df[['id_route','acceptance_time_min']].to_dict(orient='records')
-    
-    
-    def fit_betas_time_based(self):
-        sol_df = pd.DataFrame(self.sol_time_performance)
-        features_df = pd.DataFrame({k:v for k,v in self.sol_features.items() if k != 'ft_has_geo'} )
-        
-        columns_ft_has_geo = {}    
-        for geo in set([ geo for (clt, geo) in self.sol_features['ft_has_geo'].keys()]):
-            columns_ft_has_geo[f'ft_has_geo_{geo}']={clt:val for (clt,geoi),val in self.sol_features['ft_has_geo'].items() if geoi == geo}
-        ft_has_geo_df = pd.DataFrame(columns_ft_has_geo)
-        features_df = pd.merge(left=features_df, right=ft_has_geo_df, left_index=True, right_index=True)
+        features_df = routing_solution.features_df
 
-        features_df['id_route'] = features_df.index
         train_df = pd.merge(left = sol_df, right = features_df, how='left', on ='id_route')
 
         model = linear_model.Lasso(alpha=0.1)
@@ -197,5 +187,5 @@ class Abra(BaseModel):
         # print(result.params)
 
         beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}
-        self.beta_dict = beta_dict
+        return BetaMarket(beta_dict=beta_dict)
 
