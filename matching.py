@@ -125,8 +125,11 @@ class Clouder(BaseModel):
         norm_route_utility = 8/(pi_max-pi_min)*(route_utility-pi_min) - 4
         return expit(norm_route_utility)
 
-class MatchinSolution(BaseModel):
-    pass
+class MatchingSolution(BaseModel):
+    pass    
+
+class MatchingSolutionResult(BaseModel):
+    cost_by_route: Dict[Route, float]
 
 class MarketplaceInstance(BaseModel):
     clouders_dict:Dict[int,Clouder]
@@ -160,7 +163,17 @@ class MarketplaceInstance(BaseModel):
     def make_matching(self, routes:RoutingSolution, method:str = 'random') -> MatchingSolution:
         pass
 
+
 class Abra(BaseModel):
+    """Matching Model
+
+    Args:
+        BaseModel ([type]): [description]
+
+    Returns:
+        [type]: [description]
+    """    
+
     @staticmethod    
     def fit_betas_time_based(routing_solution:RoutingSolution, acceptance_time_df:pd.DataFrame) -> BetaMarket:
 

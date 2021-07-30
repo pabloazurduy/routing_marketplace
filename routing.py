@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 import mip
 import pandas as pd
 from keplergl import KeplerGl
+from pandas.core.frame import DataFrame
 from pydantic import BaseModel
 from shapely.geometry import LineString, Point, Polygon, shape
 from sklearn import cluster  # used in eval
@@ -122,7 +123,6 @@ class City(BaseModel):
             self.dist_geos[key] = self.geos[g1_id].distance(self.geos[g2_id])
         
         return self.dist_geos[key]
-
 class Node(BaseModel):
     id: int 
     point: Point
@@ -200,6 +200,10 @@ class Route(BaseModel):
 
     def ft_has_geo(self, geo_id:int) -> float:
         return 1.0 if geo_id in self.geos else 0
+    
+    @cached_property
+    def nodes_dict(self):
+        return {node.sid:node for node in self.nodes}
 
     @cached_property
     def geos(self)-> List[int]:
@@ -213,9 +217,8 @@ class Route(BaseModel):
     def centroid(self) -> Point:
         return Polygon([n.point for n in self.nodes]).centroid
     
-
     def has_node_sid(self, sid:str)-> bool:
-        return sid in [node.sid for node in self.nodes]
+        return sid in self.nodes_dict.keys()
 
     def make_fake(self):
         raise NotImplemented('Not Implemented')
@@ -291,6 +294,46 @@ class RoutingSolution(BaseModel):
         arbitrary_types_allowed = True
         keep_untouched = (cached_property,)
     
+    @classmethod
+    def from_df(cls, solved_instance_df:DataFrame, city:City):
+
+        warehouses_list = solved_instance_df[solved_instance_df['is_warehouse']].to_dict(orient='records')
+         
+        warehouses_dict:Dict[int, Node] = {}
+        for wh_inst in warehouses_list:
+            wh_id = wh_inst['pickup_warehouse_id']
+            warehouses_dict[wh_id] = Node(id = wh_id,
+                                        lat = wh_inst['lat'],
+                                        lng = wh_inst['lon'],
+                                        geo_id = city.get_geo_id(wh_inst['lat'], wh_inst['lon']),
+                                        node_type = 'warehouse'
+                                        )
+        
+        route_solution_list: List[Route] = []
+        id_node = 0 
+        for id_route in solved_instance_df['id_route'].dropna().unique():
+            drops_list = solved_instance_df[~(solved_instance_df['is_warehouse']) & 
+                                              (solved_instance_df['id_route'] == id_route) 
+                                            ].to_dict(orient='records')        
+            route = Route(id=id_route, nodes=list(), city = city)
+            for drop_inst in drops_list:
+                route.nodes.append(Node(id = id_node,
+                                        lat =drop_inst['lat'],
+                                        lng =drop_inst['lon'],
+                                        node_type = 'drop',
+                                        warehouse_id = drop_inst['pickup_warehouse_id'],
+                                        store_id = drop_inst['store_id'],
+                                        req_date = drop_inst.get('req_date',None),
+                                        geo_id = city.get_geo_id(drop_inst['lat'],drop_inst['lon'])
+                                    )) 
+
+                if not route.has_node_sid(f"w{drop_inst['pickup_warehouse_id']}"):
+                    route.nodes.append(warehouses_dict[drop_inst['pickup_warehouse_id']])  
+                id_node+=1
+        
+            route_solution_list.append(route)    
+        return cls(routes=route_solution_list, city=city)
+
     @property
     def features_df(self)-> pd.DataFrame:
         features = ['ft_size','ft_size_drops','ft_size_pickups','ft_size_geo','ft_inter_geo_dist']
@@ -383,6 +426,7 @@ class RoutingSolution(BaseModel):
 # https://pandera.readthedocs.io/en/stable/schema_models.html
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id']
+CITY_SCL = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
 
 class RoutingInstance(BaseModel):
     nodes : List[Node]
@@ -428,7 +472,7 @@ class RoutingInstance(BaseModel):
     
 
     @classmethod
-    def load_instance(cls, instance_df = pd.DataFrame):
+    def from_df(cls, instance_df = pd.DataFrame, city_inst:City = CITY_SCL ):
         """create an RoutingInstance based on a pandas dataframe with all the request and warehouse points
 
         Args:
@@ -439,8 +483,6 @@ class RoutingInstance(BaseModel):
         """    
 
         assert set(INSTANCE_DF_COLUMNS).issubset(set(instance_df.columns) ), 'instance dataframe is missing some columns'
-
-        city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
 
         warehouses_list = instance_df[instance_df.is_warehouse].to_dict(orient='records')
         drops_list      = instance_df[~instance_df.is_warehouse].to_dict(orient='records')
