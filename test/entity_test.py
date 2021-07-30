@@ -129,3 +129,15 @@ class MarketplaceTest(unittest.TestCase):
 
         beta_market = Abra.fit_betas_time_based(routing_solution=routing_solution, 
                                                 acceptance_time_df=acceptance_time_df)
+
+    def test_simulated_matching(self):
+        city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
+        # create a simulated marketplace 
+        market = MarketplaceInstance.build_simulated(num_clouders=150, 
+                                                     city=city_inst, 
+                                                     mean_beta_features = BetaMarket.default())
+        # generate a routing solution
+        instance_sol_df =    pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
+        routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
+        
+        solution = market.make_simulated_matching(routes = routing_solution)

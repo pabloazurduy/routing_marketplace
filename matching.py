@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 from os import stat
 from typing import Dict, List, Optional
+from copy import deepcopy
 
 import numpy as np
 import pandas as pd
@@ -101,6 +102,7 @@ class Clouder(BaseModel):
     def sim_route_utility(self, route:Route)-> float:
         if self.sim_params is None: 
             raise ValueError('This method only works for simulated Clouder')
+        assert route.price is not None, 'Route has no price defined'
 
         feat_has_geo = [feat for feat in self.sim_params.beta_features.keys() if 'ft_has_geo' in feat]
         feat_prop    = [feat for feat in self.sim_params.beta_features.keys() if feat not in feat_has_geo and 'ft_size_pickups' not in feat]
@@ -129,8 +131,11 @@ class MatchingSolution(BaseModel):
     pass    
 
 class MatchingSolutionResult(BaseModel):
-    cost_by_route: Dict[Route, float]
-
+    matching_df:pd.DataFrame
+    routes: Dict[int, Route] # route_id, Route 
+    clouders: Dict[int, Clouder]
+    class Config:
+        arbitrary_types_allowed = True
 class MarketplaceInstance(BaseModel):
     clouders_dict:Dict[int,Clouder]
 
@@ -160,9 +165,53 @@ class MarketplaceInstance(BaseModel):
 
         return cls(clouders_dict = fake_clouders_dict)
     
-    def make_matching(self, routes:RoutingSolution, method:str = 'random') -> MatchingSolution:
-        pass
+    def make_simulated_matching(self, routes:RoutingSolution, 
+                                method:str = 'random', 
+                                increasing_price_it:int = 3, 
+                                increasing_price_pct:float = 0.1,
+                                initial_price_by_node:float = 1500,
+                                seed:int=1334) -> MatchingSolutionResult:
+        random.seed(seed)
+        routes_dict = deepcopy(routes.routes_dict)
+        clouders_dict = deepcopy(self.clouders_dict)
 
+        match_result = []
+        match_history:Dict[Tuple[int,int]] = []
+        while len(routes_dict)>0:
+            match = self.sim_match(routes_dict,clouders_dict,method=method)
+            match_history.extend(match)
+            for pair in match:
+                route = routes_dict[pair[0]]
+                num_old_maches = sum(1 for pair in match_history if pair[0]==route.id)-1
+                route.price = initial_price_by_node * route.ft_size * (1+ increasing_price_it*num_old_maches)
+                clouder = clouders_dict[pair[1]]
+                accepted_trip = random.random() < clouder.sim_route_acceptance_prob(route)
+                match_result.append({'route_id': route.id ,
+                                     'couder_id': clouder.id,
+                                     'route_price': route.price, 
+                                     'base_util': clouder.sim_route_utility(route),
+                                     'base_prob': clouder.sim_route_acceptance_prob(route),
+                                     'accepted_trip': accepted_trip
+
+                })
+                if accepted_trip:
+                    # if trip accepted we remove both from the matching
+                    del routes_dict[route.id]
+                    del clouders_dict[clouder.id]
+
+        solution = MatchingSolutionResult(matching_df = pd.DataFrame(match_result),
+                                          routes = routes.routes_dict,
+                                          clouders = self.clouders_dict)
+        return solution
+
+
+    @staticmethod
+    def sim_match(routes_dict:Dict[int,Route], clouders_dict: Dict[int, Clouder], method:str = 'random') -> List[(int,int)]:
+        if method == 'random':
+            return list(zip(routes_dict.keys(), clouders_dict.keys()))
+        else:
+            raise NotImplemented
+                
 
 class Abra(BaseModel):
     """Matching Model
@@ -202,3 +251,6 @@ class Abra(BaseModel):
         beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}
         return BetaMarket(beta_dict=beta_dict)
 
+    @staticmethod
+    def make_matching(routes:RoutingSolution, market:MarketplaceInstance) -> MatchingSolution:
+        raise NotImplemented
