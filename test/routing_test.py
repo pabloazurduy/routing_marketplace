@@ -142,9 +142,8 @@ class MarketplaceTest(unittest.TestCase):
         instance_sol_df     = pd.concat(map(lambda file: pd.read_csv(file, sep=';'), instances_filenames))
         routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
         
-        solution = market.make_simulated_matching(routes = routing_solution)
-        self.assertIsInstance(solution.matching_df, pd.DataFrame)
-        print(solution.matching_df[['clouder_prob','accepted_trip']].describe())
-        print(solution.matching_df['accepted_trip'].mean())
-        # solution.matching_df.to_csv('matching_df.csv')
+        solution_random = market.make_simulated_matching(routes = routing_solution, method='random')
+        solution_origin = market.make_simulated_matching(routes = routing_solution, method='origin_based')
         
+        self.assertIsInstance(solution_random.matching_df, pd.DataFrame)
+        self.assertTrue(solution_origin.acceptance_rate > solution_random.acceptance_rate)

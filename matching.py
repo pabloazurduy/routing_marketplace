@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import random
 from os import stat
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Tuple
 from copy import deepcopy
+import itertools as it 
 
 import numpy as np
 import pandas as pd
@@ -163,6 +164,11 @@ class MatchingSolutionResult(BaseModel):
     clouders: Dict[int, Clouder]
     class Config:
         arbitrary_types_allowed = True
+    
+    @property
+    def acceptance_rate(self):
+        return self.matching_df['accepted_trip'].mean()
+
 class MarketplaceInstance(BaseModel):
     clouders_dict:Dict[int,Clouder]
 
@@ -206,7 +212,7 @@ class MarketplaceInstance(BaseModel):
         match_result = []
         match_history:Dict[Tuple[int,int]] = []
         while len(routes_dict)>0:
-            match = self.sim_match(routes_dict,clouders_dict,method=method)
+            match = self.sim_match(routes_dict,clouders_dict, method=method)
             match_history.extend(match)
             for pair in match:
                 route = routes_dict[pair[0]]
@@ -215,14 +221,14 @@ class MarketplaceInstance(BaseModel):
                 clouder = clouders_dict[pair[1]]
                 accepted_trip = random.random() < clouder.sim_route_acceptance_prob(route)
                 
-                best_route_util  = clouder.sim_route_utility(clouder.best_route, detailed_dict =True)
-                route_util       = clouder.sim_route_utility(route, detailed_dict =True)
-                diff_util        = {key: best_route_util[key] - route_util[key] for key in route_util}
+                # best_route_util  = clouder.sim_route_utility(clouder.best_route, detailed_dict =True)
+                # route_util       = clouder.sim_route_utility(route, detailed_dict =True)
+                # diff_util        = {key: best_route_util[key] - route_util[key] for key in route_util}
                 # worst_route_util = clouder.sim_route_utility(clouder.worst_route, detailed_dict =True)
 
-                best_route_util  = { f'best_{key}' : value for key, value in best_route_util.items() }
-                route_util       = { f'route_{key}' : value for key, value in route_util.items() }
-                route_diff_util  = { f'best-route_{key}' : value for key, value in diff_util.items() }
+                # best_route_util  = { f'best_{key}' : value for key, value in best_route_util.items() }
+                # route_util       = { f'route_{key}' : value for key, value in route_util.items() }
+                # route_diff_util  = { f'best-route_{key}' : value for key, value in diff_util.items() }
                 # worst_route_util = { f'worst_{key}' : value for key, value in worst_route_util.items() }
 
                 match_result.append({'route_id': route.id ,
@@ -233,9 +239,9 @@ class MarketplaceInstance(BaseModel):
                                      'clouder_low_util':clouder.low_utility_ref,
                                      'clouder_high_util':clouder.high_utility_ref,
                                      'accepted_trip':accepted_trip,
-                                     **best_route_util,
-                                     **route_util,
-                                     **route_diff_util
+                                     #**best_route_util,
+                                     #**route_util,
+                                     #**route_diff_util
                                      #**worst_route_util,
                 })
                 if accepted_trip:
@@ -250,11 +256,21 @@ class MarketplaceInstance(BaseModel):
 
 
     @staticmethod
-    def sim_match(routes_dict:Dict[int,Route], clouders_dict: Dict[int, Clouder], method:str = 'random') -> List[(int,int)]:
+    def sim_match(routes_dict:Dict[int,Route], clouders_dict: Dict[int, Clouder], method:str = 'random') -> List[Tuple[int,int]]:
         if method == 'random':
             return list(zip(routes_dict.keys(), clouders_dict.keys()))
+        elif method == 'origin_based':
+            match: List[Tuple[int,int]] = []
+            available_clouders = list(clouders_dict.values())
+            routes_list = list(routes_dict.values())
+            random.shuffle(routes_list)
+            for route in routes_list:
+                sorted_clouders = sorted(available_clouders, key= lambda x: route.centroid_distance(x.origin.centroid))
+                match.append((route.id, sorted_clouders.pop(0).id))
+                available_clouders = sorted_clouders
+            return match
         else:
-            raise NotImplemented
+            NotImplemented
                 
 
 class Abra(BaseModel):
