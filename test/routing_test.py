@@ -88,7 +88,7 @@ class MarketplaceTest(unittest.TestCase):
         self.assertIsInstance(clouder.high_utility_ref, float)
         self.assertTrue(clouder.low_utility_ref < clouder.high_utility_ref)
 
-    def test_simulate_auction(self):
+    def test_simulate_marketplace(self):
         city = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
         market_sim = MarketplaceInstance.build_simulated(num_clouders=100, 
                                                              city= city, 
@@ -114,7 +114,7 @@ class MarketplaceTest(unittest.TestCase):
     
     def test_multi_abra_beta(self):
         
-        instances_filenames = glob.glob('instance_simulator/real_instances/instance_sol_2' + "*.csv")
+        instances_filenames      = glob.glob('instance_simulator/real_instances/instance_sol_2' + "*.csv")
         time_instances_filenames = glob.glob('instance_simulator/real_instances/instance_sol_a' + "*.csv")        
 
 
@@ -137,7 +137,14 @@ class MarketplaceTest(unittest.TestCase):
                                                      city=city_inst, 
                                                      mean_beta_features = BetaMarket.default())
         # generate a routing solution
-        instance_sol_df =    pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
+        # instance_sol_df =    pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
+        instances_filenames = glob.glob('instance_simulator/real_instances/instance_sol_2' + "*.csv")
+        instance_sol_df     = pd.concat(map(lambda file: pd.read_csv(file, sep=';'), instances_filenames))
         routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
         
         solution = market.make_simulated_matching(routes = routing_solution)
+        self.assertIsInstance(solution.matching_df, pd.DataFrame)
+        print(solution.matching_df[['clouder_prob','accepted_trip']].describe())
+        print(solution.matching_df['accepted_trip'].mean())
+        # solution.matching_df.to_csv('matching_df.csv')
+        

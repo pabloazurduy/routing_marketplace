@@ -126,7 +126,7 @@ class City(BaseModel):
 class Node(BaseModel):
     id: int 
     point: Point
-    geo_id: Optional[int]
+    geo_id: int
     node_type:str # in ['warehouse','drop']  
 
     # only valid for drops 
@@ -236,7 +236,8 @@ class Route(BaseModel):
         nodes.append((Node(id = 0,
                            lat =whs_point.y,
                            lng =whs_point.x,
-                           node_type = 'warehouse'
+                           node_type = 'warehouse',
+                           geo_id = city.get_geo_id(whs_point.y, whs_point.x),
                     )))
 
         for drop_id in range(ideal_route_len-1):
@@ -246,6 +247,7 @@ class Route(BaseModel):
                               lng =drop_point.x,
                               node_type = 'drop',
                               warehouse_id = 0,
+                              geo_id = city.get_geo_id(drop_point.y, drop_point.x),
                         ))  
         price_total_route =  len(nodes)*price_by_node
         return cls(nodes = nodes,city=city, price= price_total_route )
@@ -271,17 +273,19 @@ class Route(BaseModel):
                               lng =drop_point.x,
                               node_type = 'drop',
                               warehouse_id = 0,
+                              geo_id = city.get_geo_id(drop_point.y, drop_point.x),                              
                         ))
 
         for wh_id in range(num_warehouses):
             beta_name,_ = next(negative_betas_cycle)
             geo_id = int(beta_name.split('_')[-1])
-            drop_point = city.geos[geo_id].get_random_point()
+            whs_point = city.geos[geo_id].get_random_point()
             nodes.append(Node(id = drop_id,
-                              lat =drop_point.y,
-                              lng =drop_point.x,
+                              lat = whs_point.y,
+                              lng = whs_point.x,
                               node_type = 'warehouse',
                               warehouse_id = 0,
+                              geo_id = city.get_geo_id(whs_point.y, whs_point.x),
                         ))
         price_total_route =  len(nodes)*price_by_node
         return cls(nodes = nodes,city=city, price= price_total_route )

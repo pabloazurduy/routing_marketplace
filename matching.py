@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 from os import stat
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from copy import deepcopy
 
 import numpy as np
@@ -13,7 +13,7 @@ from scipy.special import expit
 from sklearn import linear_model
 
 from routing import City, Geo, Route, RoutingSolution, BetaMarket
-
+from constants import FEATURES_STAT_SAMPLE
 
 
 class ClouderSimParams(BaseModel):
@@ -46,11 +46,11 @@ class ClouderSimParams(BaseModel):
 
         best_route  = Route.make_fake_best(beta_features, ideal_route_len, 
                                            beta_price, beta_origin, geo_origin=geo_origin,
-                                           price_by_node= 3500, city=city)
+                                           price_by_node= 5500, city=city)
 
         worst_route = Route.make_fake_worst(beta_features, ideal_route_len, 
                                             beta_price, beta_origin, geo_origin=geo_origin, 
-                                            price_by_node= 800, city=city)
+                                            price_by_node= 1000, city=city)
         return cls(connect_prob = connect_prob, ideal_route_len = ideal_route_len, beta_price=beta_price, beta_origin=beta_origin, 
                    beta_features=beta_features, worst_route = worst_route, best_route=best_route)
 
@@ -79,6 +79,20 @@ class Clouder(BaseModel):
             return self.sim_route_utility(self.sim_params.best_route)
         else:
             return None
+    
+    @property
+    def worst_route(self) ->Optional[Route]:
+        if self.sim_params:
+            return self.sim_params.worst_route
+        else:
+            return None
+
+    @property
+    def best_route(self) ->Optional[Route]:
+        if self.sim_params:
+            return self.sim_params.best_route
+        else:
+            return None
 
     @classmethod
     def make_fake(cls,id:int, mean_connected_prob:float, mean_ideal_route:int, 
@@ -99,32 +113,45 @@ class Clouder(BaseModel):
 
         return cls(id = id, origin = geo_origin, sim_params=sim_params)
 
-    def sim_route_utility(self, route:Route)-> float:
+    def sim_route_utility(self, route:Route, detailed_dict:bool = False, normalize:bool=True)-> Union[float, Dict]:
         if self.sim_params is None: 
             raise ValueError('This method only works for simulated Clouder')
         assert route.price is not None, 'Route has no price defined'
 
         feat_has_geo = [feat for feat in self.sim_params.beta_features.keys() if 'ft_has_geo' in feat]
-        feat_prop    = [feat for feat in self.sim_params.beta_features.keys() if feat not in feat_has_geo and 'ft_size_pickups' not in feat]
-
-        route_utility = (sum([self.sim_params.beta_features[feat]*getattr(route,feat) for feat in feat_prop]) + # general linear features 
-                         sum([self.sim_params.beta_features[feat]*route.ft_has_geo(int(feat.split('_')[-1])) for feat in feat_has_geo]) + # has_geo features  
-                         self.sim_params.beta_price * route.price +   # route price term
-                         self.sim_params.beta_origin * route.centroid_distance(self.origin.centroid) + # origin feature 
-                         self.sim_params.beta_features['ft_size_pickups']*(self.sim_params.ideal_route_len-((route.ft_size_pickups-self.sim_params.ideal_route_len)**2)) # a quadratic term for route ft_size_pickups
-                        )
-        return route_utility 
+        feat_prop    = [feat for feat in self.sim_params.beta_features.keys() if feat not in feat_has_geo and 'ft_size' not in feat]
+        
+        util_by_item = { 'linear_gral_features_util':    sum([self.sim_params.beta_features[feat]*getattr(route,feat) for feat in feat_prop]), # general linear features 
+                         'linear_has_geo_features_util': sum([self.sim_params.beta_features[feat]*route.ft_has_geo(int(feat.split('_')[-1])) for feat in feat_has_geo]), # has_geo features  
+                         'price_util':     self.sim_params.beta_price * np.sqrt(route.price), # route price term
+                         'origin_util':    self.sim_params.beta_origin * route.centroid_distance(self.origin.centroid), # origin feature 
+                         'route_len_util': self.sim_params.beta_features['ft_size']*(self.sim_params.ideal_route_len-((route.ft_size_pickups-self.sim_params.ideal_route_len)**2)) # a quadratic term for route ft_size_pickups
+            }
+        if normalize:
+            route_utility =  sum([ FEATURES_STAT_SAMPLE[feat_group]['weight']*(util_by_item[feat_group] - FEATURES_STAT_SAMPLE[feat_group]['mean'])\
+                                  /FEATURES_STAT_SAMPLE[feat_group]['std'] 
+                                   for feat_group in util_by_item.keys()]
+                                ) 
+        else:
+            route_utility = sum(util_by_item.values())
+        
+        if detailed_dict:
+            return util_by_item
+        else:
+            return route_utility 
 
     def sim_route_acceptance_prob(self, route:Route)-> float: # IP acceptance
         if self.sim_params is None: 
             raise ValueError('This method only works for simulated Clouder')
-
-        # sigm(-4) ~ 0, sigm(4) ~1 normalize utility to get desired result using a linear extrapolation
+        # sigm(-20) ~ 0, sigm(6) ~1 normalize utility to get desired result using a linear extrapolation
         # https://en.wikipedia.org/wiki/Linear_equation#Two-point_form        
+        # 
         route_utility = self.sim_route_utility(route)
         pi_max        = self.high_utility_ref
         pi_min        = self.low_utility_ref
-        norm_route_utility = 8/(pi_max-pi_min)*(route_utility-pi_min) - 4
+        y_pi_max      =  1.5
+        y_pi_min      = -30
+        norm_route_utility = (y_pi_max-y_pi_min)/(pi_max-pi_min)*(route_utility-pi_min) + y_pi_min
         return expit(norm_route_utility)
 
 class MatchingSolution(BaseModel):
@@ -160,7 +187,8 @@ class MarketplaceInstance(BaseModel):
                                                                 mean_ideal_route = mean_ideal_route, 
                                                                 mean_beta_features = mean_beta_features, 
                                                                 geo_prob = geo_prob, 
-                                                                city =city
+                                                                city =city,
+                                                                seed= clouder_id
                                                                 )
 
         return cls(clouders_dict = fake_clouders_dict)
@@ -186,13 +214,29 @@ class MarketplaceInstance(BaseModel):
                 route.price = initial_price_by_node * route.ft_size * (1+ increasing_price_it*num_old_maches)
                 clouder = clouders_dict[pair[1]]
                 accepted_trip = random.random() < clouder.sim_route_acceptance_prob(route)
+                
+                best_route_util  = clouder.sim_route_utility(clouder.best_route, detailed_dict =True)
+                route_util       = clouder.sim_route_utility(route, detailed_dict =True)
+                diff_util        = {key: best_route_util[key] - route_util[key] for key in route_util}
+                # worst_route_util = clouder.sim_route_utility(clouder.worst_route, detailed_dict =True)
+
+                best_route_util  = { f'best_{key}' : value for key, value in best_route_util.items() }
+                route_util       = { f'route_{key}' : value for key, value in route_util.items() }
+                route_diff_util  = { f'best-route_{key}' : value for key, value in diff_util.items() }
+                # worst_route_util = { f'worst_{key}' : value for key, value in worst_route_util.items() }
+
                 match_result.append({'route_id': route.id ,
                                      'couder_id': clouder.id,
                                      'route_price': route.price, 
-                                     'base_util': clouder.sim_route_utility(route),
-                                     'base_prob': clouder.sim_route_acceptance_prob(route),
-                                     'accepted_trip': accepted_trip
-
+                                     'clouder_prob': clouder.sim_route_acceptance_prob(route),
+                                     'clouder_util': clouder.sim_route_utility(route),
+                                     'clouder_low_util':clouder.low_utility_ref,
+                                     'clouder_high_util':clouder.high_utility_ref,
+                                     'accepted_trip':accepted_trip,
+                                     **best_route_util,
+                                     **route_util,
+                                     **route_diff_util
+                                     #**worst_route_util,
                 })
                 if accepted_trip:
                     # if trip accepted we remove both from the matching

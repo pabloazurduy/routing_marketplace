@@ -51,9 +51,9 @@ BETA_INIT = {'ft_has_geo_0': 0.0,
              'ft_has_geo_8': -1116.6389381100166,
              'ft_has_geo_9': -2583.5388265377965,
              'ft_inter_geo_dist': -2497.874346109264,
-             'ft_size': 0.6000352603169622,
-             'ft_size_drops': 0.0,
-             'ft_size_geo': 956.4919392614147,
+             'ft_size':           0.6000352603169622,
+             'ft_size_drops':     0.0,
+             'ft_size_geo':     -1.8563571979088904, # 956.4919392614147,
              'ft_size_pickups': -2.992447600045428
             }
 
@@ -93,11 +93,19 @@ BETA_TEST = {'ft_has_geo_10':-1.3575579066633872,
               'ft_has_geo_8':-0.0,
               'ft_has_geo_9':49.01021072700433,
               'ft_inter_geo_dist':-10.356305229453124,
-              'ft_size':-1.5950020414588337,
-              'ft_size_drops':-1.192355240550351,
-              'ft_size_geo':-1.8563571979088904,
+              'ft_size':       -1.5950020414588337,
+              'ft_size_drops': -1.192355240550351,
+              'ft_size_geo':   -1.8563571979088904,
               'ft_size_pickups':11.095607692852028,
             }
+
+FEATURES_STAT_SAMPLE = {
+    'linear_gral_features_util':   {'weight':0.20,'mean':-1732.120277,'std':1911.422243},
+    'linear_has_geo_features_util':{'weight':0.10,'mean':-403.2038632,'std':1216.913311},
+    'price_util':                  {'weight':0.30,'mean':2500.165488, 'std':1036.475684},
+    'origin_util':                 {'weight':0.30,'mean':-1501.906135,'std':1363.956983},
+    'route_len_util':              {'weight':0.10,'mean':260.1442661, 'std':471.5637154},
+}
 
 KEPLER_CONFIG = {
   "version": "v1",
