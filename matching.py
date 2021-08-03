@@ -1,20 +1,22 @@
 from __future__ import annotations
+from functools import cached_property
 
 import random
-from os import stat
 from typing import Dict, List, Optional, Union, Tuple
 from copy import deepcopy
 import itertools as it 
 
 import numpy as np
 import pandas as pd
-from numpy.random import beta
 from pydantic import BaseModel
 from scipy.special import expit
 from sklearn import linear_model
+from sklearn.model_selection import train_test_split
+import xgboost as xgb
+import networkx as nx
 
 from routing import City, Geo, Route, RoutingSolution, BetaMarket
-from constants import FEATURES_STAT_SAMPLE
+from constants import FEATURES_STAT_SAMPLE, ROUTE_FEATURES
 
 
 class ClouderSimParams(BaseModel):
@@ -47,7 +49,7 @@ class ClouderSimParams(BaseModel):
 
         best_route  = Route.make_fake_best(beta_features, ideal_route_len, 
                                            beta_price, beta_origin, geo_origin=geo_origin,
-                                           price_by_node= 5500, city=city)
+                                           price_by_node= 6500, city=city)
 
         worst_route = Route.make_fake_worst(beta_features, ideal_route_len, 
                                             beta_price, beta_origin, geo_origin=geo_origin, 
@@ -146,28 +148,80 @@ class Clouder(BaseModel):
             raise ValueError('This method only works for simulated Clouder')
         # sigm(-20) ~ 0, sigm(6) ~1 normalize utility to get desired result using a linear extrapolation
         # https://en.wikipedia.org/wiki/Linear_equation#Two-point_form        
-        # 
+        # https://en.wikipedia.org/wiki/Sigmoid_function
         route_utility = self.sim_route_utility(route)
         pi_max        = self.high_utility_ref
         pi_min        = self.low_utility_ref
-        y_pi_max      =  1.5
+        y_pi_max      =  1
         y_pi_min      = -30
         norm_route_utility = (y_pi_max-y_pi_min)/(pi_max-pi_min)*(route_utility-pi_min) + y_pi_min
-        return expit(norm_route_utility)
+        return expit(norm_route_utility) #* self.sim_params.connect_prob
+
+    def ft_origin_distance(self, route:Route) -> float:
+        return route.centroid_distance(self.origin.centroid)
 
 class MatchingSolution(BaseModel):
-    pass    
-
+    match: List[Tuple[int,int]] #route, clouder
+    expected_price: Optional[Dict[int,float]] #route, price
+    
+    @property 
+    def total_expected_cost(self):
+        return sum(self.expected_price.values())
+    
 class MatchingSolutionResult(BaseModel):
-    matching_df:pd.DataFrame
-    routes: Dict[int, Route] # route_id, Route 
+    matching_df:pd.DataFrame # add clouder origin geo
     clouders: Dict[int, Clouder]
+    routes: Dict[int, Route] # route_id, Route 
     class Config:
         arbitrary_types_allowed = True
+        keep_untouched = (cached_property,)
     
     @property
     def acceptance_rate(self):
         return self.matching_df['accepted_trip'].mean()
+    
+    @property
+    def final_cost(self) -> float:
+        return self.matching_df[self.matching_df['accepted_trip']]['route_price'].sum()
+    
+    @classmethod
+    def from_df(cls, matching_df:pd.DataFrame, routing_solution: RoutingSolution) -> MatchingSolutionResult:
+        clouders: Dict[int, Clouder] = {} 
+        for clouder in matching_df[['clouder_id','clouder_origin']].drop_duplicates().to_dict('records'):
+            geo = routing_solution.city.get_geo_from_name(clouder['clouder_origin'])
+            clouders[clouder['clouder_id']] = Clouder(id = clouder['clouder_id'], origin = geo)
+        return cls(matching_df= matching_df, clouders=clouders, routes = routing_solution.routes_dict)
+
+    def get_master_df(self, routes_features:List[str] = ROUTE_FEATURES, clouder_features:List[str] = ['origin_distance'] )-> pd.DataFrame:
+        master_df = self.matching_df[['route_id','clouder_id','clouder_origin','route_price','accepted_trip']].copy()
+        feat_routes:List[Dict[str,float]] = []
+        for route in self.routes.values():
+            feat_dict = route.get_features_dict(routes_features)
+            feat_dict['route_id'] = route.id 
+            feat_routes.append(feat_dict)
+        routes_features_df = pd.DataFrame(feat_routes)    
+        master_df = pd.merge(master_df, routes_features_df, on='route_id', how='right')
+        
+        if 'origin_distance' in clouder_features:    
+            city = list(self.routes.values())[0].city # TODO add this as arg
+            
+            origin_features:List[Dict[str,float]] = []
+            
+            for route in self.routes.values():
+                geo_names = master_df[master_df['route_id'] == route.id]['clouder_origin'].unique()
+                for geo_name in geo_names:
+                    geo = city.get_geo_from_name(geo_name)
+                    distance = route.centroid_distance(geo.centroid)
+                    origin_features.append({'route_id': route.id,
+                                            'clouder_origin':geo_name,
+                                            'origin_distance':distance
+                                            })
+            
+            origin_feat_df = pd.DataFrame(origin_features)
+
+            master_df = pd.merge(master_df, origin_feat_df, on=['route_id', 'clouder_origin'], how='right')
+        
+        return master_df
 
 class MarketplaceInstance(BaseModel):
     clouders_dict:Dict[int,Clouder]
@@ -182,7 +236,7 @@ class MarketplaceInstance(BaseModel):
 
     @classmethod
     def build_simulated(cls, num_clouders:int, city:City, mean_beta_features:BetaMarket, 
-                        mean_connected_prob:float = 0.3, mean_ideal_route:int = 15):
+                        mean_connected_prob:float = 0.8, mean_ideal_route:int = 15):
         
         geo_prob = {geo.id:1.0/len(city.geos) for geo in city.geos_list}
         fake_clouders_dict = {}
@@ -232,7 +286,8 @@ class MarketplaceInstance(BaseModel):
                 # worst_route_util = { f'worst_{key}' : value for key, value in worst_route_util.items() }
 
                 match_result.append({'route_id': route.id ,
-                                     'couder_id': clouder.id,
+                                     'clouder_id': clouder.id,
+                                     'clouder_origin': clouder.origin.name,
                                      'route_price': route.price, 
                                      'clouder_prob': clouder.sim_route_acceptance_prob(route),
                                      'clouder_util': clouder.sim_route_utility(route),
@@ -258,7 +313,10 @@ class MarketplaceInstance(BaseModel):
     @staticmethod
     def sim_match(routes_dict:Dict[int,Route], clouders_dict: Dict[int, Clouder], method:str = 'random') -> List[Tuple[int,int]]:
         if method == 'random':
-            return list(zip(routes_dict.keys(), clouders_dict.keys()))
+            clouders_ids = list(clouders_dict.keys())
+            random.seed(len(clouders_ids))
+            random.shuffle(clouders_ids)
+            return list(zip(routes_dict.keys(),clouders_ids))
         elif method == 'origin_based':
             match: List[Tuple[int,int]] = []
             available_clouders = list(clouders_dict.values())
@@ -274,15 +332,43 @@ class MarketplaceInstance(BaseModel):
                 
 
 class Abra(BaseModel):
-    """Matching Model
+    # TODO separate this into AcceptanceModel class
+    acceptance_model: Optional[xgb.Booster]
+    acceptance_model_route_features: Optional[List[str]]
+    acceptance_model_clouder_features: Optional[List[str]]
+    acceptance_model_auc: Optional[float]
+    class Config:
+        arbitrary_types_allowed = True
+        keep_untouched = (cached_property,)
 
-    Args:
-        BaseModel ([type]): [description]
 
-    Returns:
-        [type]: [description]
-    """    
+    def fit_acceptance_model(self, matching_result: MatchingSolutionResult, 
+                             route_features:List[str] = ROUTE_FEATURES, 
+                             clouder_features:List[str] = ['origin_distance', 'route_price'],
+                             ) -> None:
+        master_df = matching_result.get_master_df(route_features, clouder_features)
+        train_df, test_df = train_test_split(master_df, test_size=0.25)
 
+        dtrain = xgb.DMatrix(train_df[route_features + clouder_features], 
+                             label=train_df['accepted_trip'].astype(int))
+        dtest = xgb.DMatrix(test_df[route_features + clouder_features], 
+                            label=test_df['accepted_trip'].astype(int))
+
+        monotone_tuple = tuple(1 if feat =='route_price' else 0 for feat in route_features + clouder_features)
+        param = {'max_depth': 2, 
+                 'eta': 1, 
+                 'objective': 'binary:logistic', 
+                 'eval_metric':'auc', 
+                 'monotone_constraints': str(monotone_tuple),
+                 'tree_method':'exact'
+                 }
+        evallist = [(dtrain, 'train'), (dtest, 'eval')]
+        xgboost_model = xgb.train(param, dtrain, evals=evallist, num_boost_round=5)
+        self.acceptance_model = xgboost_model
+        self.acceptance_model_route_features = route_features 
+        self.acceptance_model_clouder_features = clouder_features
+        self.acceptance_model_auc = float((xgboost_model.eval(dtest)).split(':')[1])
+    
     @staticmethod    
     def fit_betas_time_based(routing_solution:RoutingSolution, acceptance_time_df:pd.DataFrame) -> BetaMarket:
 
@@ -311,6 +397,64 @@ class Abra(BaseModel):
         beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}
         return BetaMarket(beta_dict=beta_dict)
 
-    @staticmethod
-    def make_matching(routes:RoutingSolution, market:MarketplaceInstance) -> MatchingSolution:
-        raise NotImplemented
+    def make_matching(self, routing_solution:RoutingSolution, market:MarketplaceInstance, 
+                      prob_reference:float) -> MatchingSolution:
+        # use Karp Algorithm to solve the bipartite minimum weight matching
+        # https://networkx.org/documentation/stable/reference/algorithms/bipartite.html#module-networkx.algorithms.bipartite.matching
+        # https://towardsdatascience.com/matching-of-bipartite-graphs-using-networkx-6d355b164567
+        
+        price_matrix = self.build_price_matrix(routing_solution, market, prob_reference)
+        weighted_edges = [ (route_id, clouder_id, price) for (route_id, clouder_id), price in price_matrix.items()]
+        graph = nx.Graph()
+        graph.add_weighted_edges_from(weighted_edges)
+        match_dict = nx.bipartite.minimum_weight_full_matching(graph)
+        
+        match_list:List[Tuple[int, int]] = []
+        expected_price:Dict[int,float] = {}
+        for route in routing_solution.routes:
+            match_list.append((route.id, match_dict[route.id]))
+            expected_price[route.id] = price_matrix[(route.id, match_dict[route.id])]
+        return MatchingSolution(match = match_list, expected_price = expected_price)
+
+     
+    def build_price_matrix(self, routing_solution:RoutingSolution, market:MarketplaceInstance, 
+                           prob_reference:float) -> Dict[Tuple[int,int],float]:
+        """ Based on previous acceptance model fitted estimate the estimated price to pay 
+            to all clouders in the market in order to get at least `prob_reference` probability
+            of acceptance. 
+
+        Args:
+            routing_solution (RoutingSolution): Set of all routes to be evaluated
+            market (MarketplaceInstance): Set of clouders to match with 
+            prob_reference (float): min acceptance probability to infer the price
+
+        Returns:
+            Dict[Tuple[int,int],float]: `(route_id, clouder_id): route_price`,
+        """                           
+        price_matrix:Dict[Tuple[int,int],float] = {}
+        for route, clouder in it.product(routing_solution.routes, market.clouders):
+            price_matrix[(route.id, clouder.id)] = self.find_min_price_route_clouder(route, clouder, prob_reference)
+        return price_matrix
+    
+    def find_min_price_route_clouder(self,route:Route, clouder:Clouder, prob_reference:float) -> float:
+        assert self.acceptance_model is not None, 'There must be a acceptance model fitted'
+        
+        samples = 25
+        price_by_node_range =  np.linspace(start=800, stop=6000, num= samples) * route.ft_size
+        route_feat = route.get_features_dict(self.acceptance_model_route_features)
+        origin_distance =  clouder.ft_origin_distance(route)
+        # build prediction dataframe
+        predict_df = pd.DataFrame([route_feat for i in range(samples)])
+        predict_df['route_price'] = price_by_node_range
+        predict_df['origin_distance'] = origin_distance
+
+        dpredict = xgb.DMatrix(predict_df[self.acceptance_model_route_features + 
+                                          self.acceptance_model_clouder_features])
+        predict_df['acceptance_prob'] = self.acceptance_model.predict(dpredict)
+        
+        sub_predict_df = predict_df[predict_df['acceptance_prob'] >= prob_reference]
+        if len(sub_predict_df) >0:
+            return sub_predict_df['route_price'].min() 
+        else:
+            # print(f'highest probability reached {predict_df["acceptance_prob"].max()} below threshold = {prob_reference}')
+            return predict_df['route_price'].max()

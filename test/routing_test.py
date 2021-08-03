@@ -4,11 +4,10 @@ import unittest
 import pandas as pd
 import numpy as np 
 from datetime import date 
-from matching import Abra, BetaMarket, MarketplaceInstance, Clouder
+from matching import BetaMarket
 from routing import City, Geodude, RoutingInstance, RoutingSolution
-from constants import BETA_TEST, BETA_INIT
+from constants import BETA_INIT
 import os 
-import glob
 
 class RoutingTest(unittest.TestCase): 
     def test_create_simple_routing_instance(self):
@@ -68,82 +67,3 @@ class RoutingTest(unittest.TestCase):
     def test_build_beta_dict(self):
         self.assertEqual(BetaMarket.default().dict, BETA_INIT)
     
-class MarketplaceTest(unittest.TestCase):
-    def build_sim_marketplace(self):
-        city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
-        market = MarketplaceInstance.build_simulated(num_clouders=150, 
-                                                     city=city_inst, 
-                                                     mean_beta_features = BetaMarket.default())
-    
-    def test_clouder_sim(self):
-        city = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
-        clouder = Clouder.make_fake(id = 1,  
-                                    mean_connected_prob=0.3, 
-                                    mean_ideal_route = 15,
-                                    mean_beta_features = BetaMarket.default(),
-                                    geo_prob = {geo.id:1.0/len(city.geos) for geo in city.geos_list},
-                                    city = city
-                                    )
-        self.assertIsInstance(clouder.low_utility_ref, float)
-        self.assertIsInstance(clouder.high_utility_ref, float)
-        self.assertTrue(clouder.low_utility_ref < clouder.high_utility_ref)
-
-    def test_simulate_marketplace(self):
-        city = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
-        market_sim = MarketplaceInstance.build_simulated(num_clouders=100, 
-                                                             city= city, 
-                                                             mean_beta_features = BetaMarket.default(), 
-                                                             mean_ideal_route=15,
-                                                             mean_connected_prob=0.3
-                                                             )
-    
-        self.assertTrue(market_sim.is_fake)
-
-    def test_abra_time_based_beta(self):
-        instance_sol_df =    pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
-        acceptance_time_df = pd.read_csv('instance_simulator/real_instances/instance_sol_attributes2021-06-08.csv', sep=';')
-
-        routing_instance = RoutingInstance.from_df(instance_sol_df)
-        routing_solution = routing_instance.solution
-
-        beta_market = Abra.fit_betas_time_based(routing_solution=routing_solution, acceptance_time_df=acceptance_time_df)
-        self.assertIsInstance(beta_market, BetaMarket)
-        for beta in beta_market.dict.keys():
-            #print(f'{beta}, {beta_market.dict[beta]:0.4f}, {BETA_INIT[beta]:0.4f}')
-            self.assertTrue(np.allclose(beta_market.dict[beta], BETA_TEST[beta]))
-    
-    def test_multi_abra_beta(self):
-        
-        instances_filenames      = glob.glob('instance_simulator/real_instances/instance_sol_2' + "*.csv")
-        time_instances_filenames = glob.glob('instance_simulator/real_instances/instance_sol_a' + "*.csv")        
-
-
-        instance_sol_df    = pd.concat(map(lambda file: pd.read_csv(file, sep=';'), instances_filenames))
-        acceptance_time_df = pd.concat(map(lambda file: pd.read_csv(file, sep=';'), time_instances_filenames))
-        
-        instance_sol_df.drop_duplicates(inplace=True)
-        self.assertEqual(sum(acceptance_time_df.id_route.duplicated()),0)
-        
-        city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
-        routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
-
-        beta_market = Abra.fit_betas_time_based(routing_solution=routing_solution, 
-                                                acceptance_time_df=acceptance_time_df)
-
-    def test_simulated_matching(self):
-        city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
-        # create a simulated marketplace 
-        market = MarketplaceInstance.build_simulated(num_clouders=150, 
-                                                     city=city_inst, 
-                                                     mean_beta_features = BetaMarket.default())
-        # generate a routing solution
-        # instance_sol_df =    pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
-        instances_filenames = glob.glob('instance_simulator/real_instances/instance_sol_2' + "*.csv")
-        instance_sol_df     = pd.concat(map(lambda file: pd.read_csv(file, sep=';'), instances_filenames))
-        routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
-        
-        solution_random = market.make_simulated_matching(routes = routing_solution, method='random')
-        solution_origin = market.make_simulated_matching(routes = routing_solution, method='origin_based')
-        
-        self.assertIsInstance(solution_random.matching_df, pd.DataFrame)
-        self.assertTrue(solution_origin.acceptance_rate > solution_random.acceptance_rate)

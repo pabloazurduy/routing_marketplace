@@ -11,3 +11,5 @@ shapely==1.7.1
 mip==1.13.0
 ipython==7.24.1
 keplergl==0.2.2
+xgboost==1.4.2
+networkx==2.6.2    

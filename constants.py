@@ -99,10 +99,12 @@ BETA_TEST = {'ft_has_geo_10':-1.3575579066633872,
               'ft_size_pickups':11.095607692852028,
             }
 
+ROUTE_FEATURES = list(BETA_INIT.keys())
+
 FEATURES_STAT_SAMPLE = {
     'linear_gral_features_util':   {'weight':0.20,'mean':-1732.120277,'std':1911.422243},
     'linear_has_geo_features_util':{'weight':0.10,'mean':-403.2038632,'std':1216.913311},
-    'price_util':                  {'weight':0.30,'mean':2500.165488, 'std':1036.475684},
+    'price_util':                  {'weight':0.30,'mean':4017.627266, 'std':2278.858993},
     'origin_util':                 {'weight':0.30,'mean':-1501.906135,'std':1363.956983},
     'route_len_util':              {'weight':0.10,'mean':260.1442661, 'std':471.5637154},
 }

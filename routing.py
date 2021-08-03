@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from shapely.geometry import LineString, Point, Polygon, shape
 from sklearn import cluster  # used in eval
 
-from constants import KEPLER_CONFIG, BETA_INIT
+from constants import KEPLER_CONFIG, BETA_INIT, ROUTE_FEATURES
 
 
 # city meta classes 
@@ -89,14 +89,20 @@ class City(BaseModel):
 
         return cls(id=id, name_city = name_city, geos=geos)
     
-    def get_geo(self, lat:float, lng:float) -> Optional[Geo]: 
+    def get_geo_from_name(self, geo_name:str) -> Optional[Geo]:
+        for geo in self.geos.values():
+            if geo.name is not None and geo.name.casefold() == geo_name.casefold():
+                return geo 
+        return None 
+
+    def get_geo_from_latlong(self, lat:float, lng:float) -> Optional[Geo]: 
         for geo in self.geos.values():
             if geo.contains(lat, lng):
                 return geo # pointer 
         return None
     
-    def get_geo_id(self, lat:float, lng:float) -> Optional[int]:
-        geo_loc = self.get_geo(lat,lng)  
+    def get_geo_id_from_latlong(self, lat:float, lng:float) -> Optional[int]:
+        geo_loc = self.get_geo_from_latlong(lat,lng)  
         if geo_loc is None:
             return None 
         else:
@@ -225,6 +231,11 @@ class Route(BaseModel):
     
     def centroid_distance(self, point:Point) -> float:
         return self.centroid.distance(point)
+    
+    def get_features_dict(self, features:List[str] = ROUTE_FEATURES) -> Dict[str, float]:
+        feat_dict = { feat:getattr(self,feat) for feat in features if 'has_geo' not in feat }
+        feat_dict.update({feat:self.ft_has_geo(int(feat.split('_')[-1])) for feat in features if 'has_geo' in feat})
+        return feat_dict 
 
     @classmethod
     def make_fake_best(cls, beta_features:Dict[str,float], ideal_route_len:int, 
@@ -237,7 +248,7 @@ class Route(BaseModel):
                            lat =whs_point.y,
                            lng =whs_point.x,
                            node_type = 'warehouse',
-                           geo_id = city.get_geo_id(whs_point.y, whs_point.x),
+                           geo_id = city.get_geo_id_from_latlong(whs_point.y, whs_point.x),
                     )))
 
         for drop_id in range(ideal_route_len-1):
@@ -247,7 +258,7 @@ class Route(BaseModel):
                               lng =drop_point.x,
                               node_type = 'drop',
                               warehouse_id = 0,
-                              geo_id = city.get_geo_id(drop_point.y, drop_point.x),
+                              geo_id = city.get_geo_id_from_latlong(drop_point.y, drop_point.x),
                         ))  
         price_total_route =  len(nodes)*price_by_node
         return cls(nodes = nodes,city=city, price= price_total_route )
@@ -273,7 +284,7 @@ class Route(BaseModel):
                               lng =drop_point.x,
                               node_type = 'drop',
                               warehouse_id = 0,
-                              geo_id = city.get_geo_id(drop_point.y, drop_point.x),                              
+                              geo_id = city.get_geo_id_from_latlong(drop_point.y, drop_point.x),                              
                         ))
 
         for wh_id in range(num_warehouses):
@@ -285,7 +296,7 @@ class Route(BaseModel):
                               lng = whs_point.x,
                               node_type = 'warehouse',
                               warehouse_id = 0,
-                              geo_id = city.get_geo_id(whs_point.y, whs_point.x),
+                              geo_id = city.get_geo_id_from_latlong(whs_point.y, whs_point.x),
                         ))
         price_total_route =  len(nodes)*price_by_node
         return cls(nodes = nodes,city=city, price= price_total_route )
@@ -309,7 +320,7 @@ class RoutingSolution(BaseModel):
             warehouses_dict[wh_id] = Node(id = wh_id,
                                         lat = wh_inst['lat'],
                                         lng = wh_inst['lon'],
-                                        geo_id = city.get_geo_id(wh_inst['lat'], wh_inst['lon']),
+                                        geo_id = city.get_geo_id_from_latlong(wh_inst['lat'], wh_inst['lon']),
                                         node_type = 'warehouse'
                                         )
         
@@ -328,7 +339,7 @@ class RoutingSolution(BaseModel):
                                         warehouse_id = drop_inst['pickup_warehouse_id'],
                                         store_id = drop_inst['store_id'],
                                         req_date = drop_inst.get('req_date',None),
-                                        geo_id = city.get_geo_id(drop_inst['lat'],drop_inst['lon'])
+                                        geo_id = city.get_geo_id_from_latlong(drop_inst['lat'],drop_inst['lon'])
                                     )) 
 
                 if not route.has_node_sid(f"w{drop_inst['pickup_warehouse_id']}"):
@@ -497,7 +508,7 @@ class RoutingInstance(BaseModel):
             nodes.append(Node(id = wh_id,
                               lat = wh_inst['lat'],
                               lng = wh_inst['lon'],
-                              geo_id = city_inst.get_geo_id(wh_inst['lat'], wh_inst['lon']),
+                              geo_id = city_inst.get_geo_id_from_latlong(wh_inst['lat'], wh_inst['lon']),
                               node_type = 'warehouse'
                             ))
 
@@ -510,7 +521,7 @@ class RoutingInstance(BaseModel):
                               warehouse_id = drop_inst['pickup_warehouse_id'],
                               store_id = drop_inst['store_id'],
                               req_date = drop_inst.get('req_date',None),
-                              geo_id = city_inst.get_geo_id(drop_inst['lat'],drop_inst['lon'])
+                              geo_id = city_inst.get_geo_id_from_latlong(drop_inst['lat'],drop_inst['lon'])
                         ))  
 
         # remove unused geos 
