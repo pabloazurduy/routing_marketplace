@@ -7,6 +7,7 @@ from matching import Abra, BetaMarket, MarketplaceInstance, Clouder, MatchingSol
 from routing import City, RoutingInstance, RoutingSolution
 from constants import BETA_TEST
 import glob
+import seaborn as sns
 
 
 class MarketplaceTest(unittest.TestCase):
@@ -150,7 +151,9 @@ class MarketplaceTest(unittest.TestCase):
         instance_sol_df = pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
         routing_abra = RoutingSolution.from_df(instance_sol_df, city = city_inst)
         price_matrix = abra.build_price_matrix(routing_abra, market=market, prob_reference=0.65)
+        # abra.build_price_matrix_plot(routing_abra, market=market, prob_reference=0.65)
         self.assertIsInstance(price_matrix, dict)
+
     
     def test_abra_matching(self):
         # use a routing solution
@@ -174,3 +177,32 @@ class MarketplaceTest(unittest.TestCase):
         self.assertIsInstance(match_solution, MatchingSolution)
         self.assertTrue(match_solution.total_expected_cost >= 0)
         self.assertTrue(len(match_solution.match) == len(routing_abra.routes))
+    
+    def test_abra_matching_route_price_plot(self):
+        # use a routing solution
+        city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
+        instances_filenames = glob.glob('instance_simulator/real_instances/instance_sol_2' + "*.csv")
+        instance_sol_df     = pd.concat(map(lambda file: pd.read_csv(file, sep=';'), instances_filenames))
+        routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
+
+        # generate a simulated marketplace
+        market = MarketplaceInstance.build_simulated(num_clouders=150, 
+                                                     city=city_inst, 
+                                                     mean_beta_features = BetaMarket.default())
+        matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
+
+        # build abra model
+        abra = Abra()
+        abra.fit_acceptance_model(matching_random)
+        instance_sol_df = pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
+        routing_abra = RoutingSolution.from_df(instance_sol_df, city = city_inst)
+        prices = []
+        for prob in np.linspace(start=0.20, stop=0.8, num=10):
+            match_solution = abra.make_matching(routing_abra, market=market, prob_reference=prob)
+            price_list = [{'route_id':route_id, 'route_price':route_price, 'prob':prob} for route_id,route_price in match_solution.expected_price.items()]
+            prices += price_list
+            print(f'{prob = }, {match_solution.total_expected_cost = }')
+        prices_df = pd.DataFrame(prices)
+        palette = sns.color_palette("mako", as_cmap=True)
+        sns.lineplot(x="prob", y="route_price",hue="route_id", 
+                     palette=palette, data=prices_df)

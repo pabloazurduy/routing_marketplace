@@ -13,3 +13,4 @@ ipython==7.24.1
 keplergl==0.2.2
 xgboost==1.4.2
 networkx==2.6.2    
+seaborn==0.11

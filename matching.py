@@ -14,6 +14,7 @@ from sklearn import linear_model
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
 import networkx as nx
+import seaborn as sns
 
 from routing import City, Geo, Route, RoutingSolution, BetaMarket
 from constants import FEATURES_STAT_SAMPLE, ROUTE_FEATURES
@@ -435,6 +436,13 @@ class Abra(BaseModel):
         for route, clouder in it.product(routing_solution.routes, market.clouders):
             price_matrix[(route.id, clouder.id)] = self.find_min_price_route_clouder(route, clouder, prob_reference)
         return price_matrix
+    
+    def build_price_matrix_plot(self, routing_solution:RoutingSolution, market:MarketplaceInstance, 
+                                prob_reference:float) -> None:    
+        price_matrix =  self.build_price_matrix(routing_solution, market, prob_reference)
+        price_matrix_tuples = [(route_id, clouder_id, price) for (route_id, clouder_id), price in price_matrix.items()]
+        price_matrix_df = pd.DataFrame(price_matrix_tuples).pivot(0,1,2)
+        sns.heatmap(price_matrix_df, annot=False, annot_kws={"size": 7})
     
     def find_min_price_route_clouder(self,route:Route, clouder:Clouder, prob_reference:float) -> float:
         assert self.acceptance_model is not None, 'There must be a acceptance model fitted'
