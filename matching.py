@@ -154,7 +154,7 @@ class Clouder(BaseModel):
         pi_max        = self.high_utility_ref
         pi_min        = self.low_utility_ref
         y_pi_max      =  1
-        y_pi_min      = -30
+        y_pi_min      = -3
         norm_route_utility = (y_pi_max-y_pi_min)/(pi_max-pi_min)*(route_utility-pi_min) + y_pi_min
         return expit(norm_route_utility) #* self.sim_params.connect_prob
 
@@ -256,26 +256,36 @@ class MarketplaceInstance(BaseModel):
     
     def make_simulated_matching(self, routes:RoutingSolution, 
                                 method:str = 'random', 
-                                increasing_price_it:int = 3, 
-                                increasing_price_pct:float = 0.1,
+                                increasing_price_it:int = 1, 
+                                increasing_price_pct:float = 0.15,
                                 initial_price_by_node:float = 1500,
                                 seed:int=1334) -> MatchingSolutionResult:
         random.seed(seed)
         routes_dict = deepcopy(routes.routes_dict)
         clouders_dict = deepcopy(self.clouders_dict)
 
+        if len(clouders_dict) < len(routes_dict):
+            raise ValueError(f' number of clouders in simulation ({len(clouders_dict)}) is less than the number of routes to match ({len(routes_dict)})')
+
         match_result = []
-        match_history:Dict[Tuple[int,int]] = []
+        match_history:List[Tuple[int,int]] = []
         while len(routes_dict)>0:
-            match = self.sim_match(routes_dict,clouders_dict, method=method)
+
+            if method == 'random':
+                match = self.sim_match_random(routes_dict, clouders_dict)
+            elif method == 'origin_based':
+                match = self.sim_match_origin_based(routes_dict, clouders_dict)
+            else:
+                raise NotImplemented
+
             match_history.extend(match)
             for pair in match:
                 route = routes_dict[pair[0]]
                 num_old_maches = sum(1 for pair in match_history if pair[0]==route.id)-1
-                route.price = initial_price_by_node * route.ft_size * (1+ increasing_price_it*num_old_maches)
+                route.price = initial_price_by_node * route.ft_size * (1+ increasing_price_pct * (num_old_maches / increasing_price_it))
                 clouder = clouders_dict[pair[1]]
                 accepted_trip = random.random() < clouder.sim_route_acceptance_prob(route)
-                
+                print(random.random())
                 # best_route_util  = clouder.sim_route_utility(clouder.best_route, detailed_dict =True)
                 # route_util       = clouder.sim_route_utility(route, detailed_dict =True)
                 # diff_util        = {key: best_route_util[key] - route_util[key] for key in route_util}
@@ -304,6 +314,7 @@ class MarketplaceInstance(BaseModel):
                     # if trip accepted we remove both from the matching
                     del routes_dict[route.id]
                     del clouders_dict[clouder.id]
+            print(f'{len(clouders_dict)} {len(routes_dict)} {len(match_history)} {clouder.sim_route_acceptance_prob(route)}')
 
         solution = MatchingSolutionResult(matching_df = pd.DataFrame(match_result),
                                           routes = routes.routes_dict,
@@ -312,25 +323,23 @@ class MarketplaceInstance(BaseModel):
 
 
     @staticmethod
-    def sim_match(routes_dict:Dict[int,Route], clouders_dict: Dict[int, Clouder], method:str = 'random') -> List[Tuple[int,int]]:
-        if method == 'random':
-            clouders_ids = list(clouders_dict.keys())
-            random.seed(len(clouders_ids))
-            random.shuffle(clouders_ids)
-            return list(zip(routes_dict.keys(),clouders_ids))
-        elif method == 'origin_based':
-            match: List[Tuple[int,int]] = []
-            available_clouders = list(clouders_dict.values())
-            routes_list = list(routes_dict.values())
-            random.shuffle(routes_list)
-            for route in routes_list:
-                sorted_clouders = sorted(available_clouders, key= lambda x: route.centroid_distance(x.origin.centroid))
-                match.append((route.id, sorted_clouders.pop(0).id))
-                available_clouders = sorted_clouders
-            return match
-        else:
-            NotImplemented
-                
+    def sim_match_random(routes_dict:Dict[int,Route], clouders_dict: Dict[int, Clouder]) -> List[Tuple[int,int]]:
+        # WARNING this random function does not have a seed set because was always called from a nested random method
+        clouders_ids = list(clouders_dict.keys())
+        random.shuffle(clouders_ids)
+        return list(zip(routes_dict.keys(),clouders_ids))
+    
+    @staticmethod            
+    def sim_match_origin_based(routes_dict:Dict[int,Route], clouders_dict: Dict[int, Clouder]) -> List[Tuple[int,int]]:
+        match: List[Tuple[int,int]] = []
+        available_clouders = list(clouders_dict.values())
+        routes_list = list(routes_dict.values())
+        random.shuffle(routes_list)
+        for route in routes_list:
+            sorted_clouders = sorted(available_clouders, key= lambda x: route.centroid_distance(x.origin.centroid))
+            match.append((route.id, sorted_clouders.pop(0).id))
+            available_clouders = sorted_clouders
+        return match                
 
 class Abra(BaseModel):
     # TODO separate this into AcceptanceModel class
@@ -371,13 +380,21 @@ class Abra(BaseModel):
         self.acceptance_model_auc = float((xgboost_model.eval(dtest)).split(':')[1])
     
     @staticmethod    
-    def fit_betas_time_based(routing_solution:RoutingSolution, acceptance_time_df:pd.DataFrame) -> BetaMarket:
+    def fit_betas_time_based(routing_solution:RoutingSolution, acceptance_time_df:pd.DataFrame, 
+                            time_cap_min:float = 60*2) -> BetaMarket:
 
         acceptance_time_df['acceptance_time_min'] =( pd.to_datetime(acceptance_time_df['route_acceptance_timestamp'])
                                                    - pd.to_datetime(acceptance_time_df['route_creation_timestamp'])
                                                 ).dt.total_seconds()/60 
-        sol_df = pd.DataFrame(acceptance_time_df[['id_route','acceptance_time_min']])        
+        # data cap 
+        # acceptance_time_df['acceptance_time_min'] =  np.minimum(acceptance_time_df['acceptance_time_min'], time_cap_min)                                                       
         
+        # exploration 
+        # acceptance_time_df['acceptance_time_hrs'] = acceptance_time_df['acceptance_time_min']/60
+        # acceptance_time_df[acceptance_time_df['acceptance_time_hrs'] <=7]['acceptance_time_hrs'].hist(bins=100)
+        # acceptance_time_df['acceptance_time_hrs'].hist(bins=100)
+        
+        sol_df = pd.DataFrame(acceptance_time_df[['id_route','acceptance_time_min']])        
         features_df = routing_solution.features_df
 
         train_df = pd.merge(left = sol_df, right = features_df, how='left', on ='id_route')
@@ -392,7 +409,7 @@ class Abra(BaseModel):
         # from statsmodels.api import OLS
         # result = OLS(train_df['acceptance_time_min'],x_df).fit_regularized('sqrt_lasso')
         # with open('summary.txt', 'w') as fh:
-        #     fh.write(OLS(train_df['acceptance_time_min'],x_df).fit().summary().as_text())
+        #    fh.write(OLS(train_df['acceptance_time_min'],x_df).fit().summary().as_text())
         # print(result.params)
 
         beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}

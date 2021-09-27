@@ -1,0 +1,66 @@
+                             OLS Regression Results                            
+===============================================================================
+Dep. Variable:     acceptance_time_min   R-squared:                       1.000
+Model:                             OLS   Adj. R-squared:                    nan
+Method:                  Least Squares   F-statistic:                       nan
+Date:                 Sun, 19 Sep 2021   Prob (F-statistic):                nan
+Time:                         22:09:30   Log-Likelihood:                 480.33
+No. Observations:                   18   AIC:                            -924.7
+Df Residuals:                        0   BIC:                            -908.6
+Df Model:                           17                                         
+Covariance Type:             nonrobust                                         
+=====================================================================================
+                        coef    std err          t      P>|t|      [0.025      0.975]
+-------------------------------------------------------------------------------------
+ft_has_geo_10        68.6919        inf          0        nan         nan         nan
+ft_has_geo_11       -34.4455        inf         -0        nan         nan         nan
+ft_has_geo_12       -34.4455        inf         -0        nan         nan         nan
+ft_has_geo_13       -34.4455        inf         -0        nan         nan         nan
+ft_has_geo_17       -15.8273        inf         -0        nan         nan         nan
+ft_has_geo_18        72.0009        inf          0        nan         nan         nan
+ft_has_geo_2         47.6210        inf          0        nan         nan         nan
+ft_has_geo_20       -15.8273        inf         -0        nan         nan         nan
+ft_has_geo_21       -15.8273        inf         -0        nan         nan         nan
+ft_has_geo_27      -178.4212        inf         -0        nan         nan         nan
+ft_has_geo_29        47.6210        inf          0        nan         nan         nan
+ft_has_geo_3        178.4536        inf          0        nan         nan         nan
+ft_has_geo_30        68.6919        inf          0        nan         nan         nan
+ft_has_geo_31       178.4536        inf          0        nan         nan         nan
+ft_has_geo_32      -207.2516        inf         -0        nan         nan         nan
+ft_has_geo_34         2.0723        inf          0        nan         nan         nan
+ft_has_geo_36        11.4519        inf          0        nan         nan         nan
+ft_has_geo_37        47.6210        inf          0        nan         nan         nan
+ft_has_geo_38        11.4519        inf          0        nan         nan         nan
+ft_has_geo_39        68.6919        inf          0        nan         nan         nan
+ft_has_geo_40      -224.7075        inf         -0        nan         nan         nan
+ft_has_geo_42        68.6919        inf          0        nan         nan         nan
+ft_has_geo_43        72.0009        inf          0        nan         nan         nan
+ft_has_geo_45      -141.8663        inf         -0        nan         nan         nan
+ft_has_geo_46      -142.8750        inf         -0        nan         nan         nan
+ft_has_geo_47       178.4536        inf          0        nan         nan         nan
+ft_has_geo_48       135.9679        inf          0        nan         nan         nan
+ft_has_geo_49      -205.8217        inf         -0        nan         nan         nan
+ft_has_geo_5         68.6919        inf          0        nan         nan         nan
+ft_has_geo_50       -34.4455        inf         -0        nan         nan         nan
+ft_has_geo_51       101.5223        inf          0        nan         nan         nan
+ft_has_geo_6         11.4519        inf          0        nan         nan         nan
+ft_has_geo_7         68.6919        inf          0        nan         nan         nan
+ft_has_geo_8         11.4519        inf          0        nan         nan         nan
+ft_has_geo_9       -311.8643        inf         -0        nan         nan         nan
+ft_inter_geo_dist    31.9210        inf          0        nan         nan         nan
+ft_size              24.8889        inf          0        nan         nan         nan
+ft_size_drops       -24.9889        inf         -0        nan         nan         nan
+ft_size_geo         -78.3250        inf         -0        nan         nan         nan
+ft_size_pickups      49.8778        inf          0        nan         nan         nan
+==============================================================================
+Omnibus:                        1.905   Durbin-Watson:                   0.393
+Prob(Omnibus):                  0.386   Jarque-Bera (JB):                0.930
+Skew:                          -0.555   Prob(JB):                        0.628
+Kurtosis:                       3.085   Cond. No.                     6.24e+04
+==============================================================================
+
+Notes:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
+[2] The input rank is higher than the number of observations.
+[3] The condition number is large, 6.24e+04. This might indicate that there are
+strong multicollinearity or other numerical problems.

@@ -1,8 +1,7 @@
 from datetime import date
 from pathlib import Path
-from constants import BETA_INIT
-from routing import Geo, Geodude, RoutingInstance
-from matching import Abra
+from routing import  Geodude, RoutingInstance
+from matching import BetaMarket
 import pandas as pd
 import numpy as np 
 
@@ -15,9 +14,8 @@ if __name__ == "__main__":
     
     routing_instance = RoutingInstance.from_df(instance_sol_df)
     routing_solution = routing_instance.solution
-    beta_market = Abra.fit_betas_time_based(routing_solution=routing_solution, acceptance_time_df=acceptance_time_df)
+    beta_market = BetaMarket.default() #Abra.fit_betas_time_based(routing_solution=routing_solution, acceptance_time_df=acceptance_time_df)
 
-    
 
     INSTANCES = ['instance_simulator/real_instances/instance_2021-05-13.csv',
                  'instance_simulator/real_instances/instance_2021-05-24.csv',
@@ -32,6 +30,6 @@ if __name__ == "__main__":
         
         routing_instance = RoutingInstance.from_df(instance_df)
         routing_model = Geodude(routing_instance = routing_instance, beta_market = beta_market)
-        routing_solution = routing_model.solve(max_time_min=30)
+        routing_solution = routing_model.solve(max_time_min=10)
 
-        routing_solution.plot(file_name=f'instance_results_test/plot_map_{Path(instance_path).stem}.html')
+        routing_solution.plot(file_name=f'instance_results/plot_map_{Path(instance_path).stem}.html')

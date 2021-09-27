@@ -11,8 +11,8 @@ This is the draft model[Document link](https://docs.google.com/document/d/1xxclX
  - `instance_simulator`: a time based simulator for a routing problem in SCL
 
 ## Installation 
-    conda env create -n wareclouds python == 3.8
-    pip install requirements.txt 
+    conda create --name wareclouds python=3.9.7
+    pip install -r requirements.txt 
 
 
 ## Testing

@@ -73,9 +73,9 @@ class City(BaseModel):
     @property
     def geos_list(self) -> List[Geo]:
         return list(self.geos.values())
+
     @classmethod
     def from_geojson(cls, geojson_file_path:str, name_city:Optional[str]=None, id:Optional[int]=None):
-
         with open(geojson_file_path) as f:
             geojson = json.load(f)
         
@@ -100,6 +100,12 @@ class City(BaseModel):
             if geo.contains(lat, lng):
                 return geo # pointer 
         return None
+
+    def latlong_is_contained(self, lat:float, lng, float) -> bool:
+        if self.get_geo_from_latlong(lat,lng) is None:
+            return False 
+        else:
+            return True
     
     def get_geo_id_from_latlong(self, lat:float, lng:float) -> Optional[int]:
         geo_loc = self.get_geo_from_latlong(lat,lng)  
@@ -129,6 +135,9 @@ class City(BaseModel):
             self.dist_geos[key] = self.geos[g1_id].distance(self.geos[g2_id])
         
         return self.dist_geos[key]
+    
+
+
 class Node(BaseModel):
     id: int 
     point: Point
@@ -221,7 +230,12 @@ class Route(BaseModel):
 
     @cached_property
     def centroid(self) -> Point:
-        return Polygon([n.point for n in self.nodes]).centroid
+        if len(self.nodes) == 1:
+            return self.nodes[0].point
+        elif len(self.nodes) == 2:
+            return LineString([n.point for n in self.nodes]).centroid 
+        elif len(self.nodes) > 2:
+            return Polygon([n.point for n in self.nodes]).centroid
     
     def has_node_sid(self, sid:str)-> bool:
         return sid in self.nodes_dict.keys()
@@ -487,7 +501,7 @@ class RoutingInstance(BaseModel):
     
 
     @classmethod
-    def from_df(cls, instance_df = pd.DataFrame, city_inst:City = CITY_SCL ):
+    def from_df(cls, instance_df = pd.DataFrame, city_inst:City = CITY_SCL, remove_unused_geos:bool = False):
         """create an RoutingInstance based on a pandas dataframe with all the request and warehouse points
 
         Args:
@@ -524,14 +538,15 @@ class RoutingInstance(BaseModel):
                               geo_id = city_inst.get_geo_id_from_latlong(drop_inst['lat'],drop_inst['lon'])
                         ))  
 
-        # remove unused geos 
-        used_geos = set()
-        for node in nodes:
-            used_geos.add(node.geo_id)
-        
-        for geo_id in list(city_inst.geos.keys()):
-            if geo_id not in used_geos:
-                city_inst.remove_geo(geo_id)
+        # TODO BUG remove unused geos
+        if remove_unused_geos: # this modify city_instance 
+            used_geos = set()
+            for node in nodes:
+                used_geos.add(node.geo_id)
+            
+            for geo_id in list(city_inst.geos.keys()):
+                if geo_id not in used_geos:
+                    city_inst.remove_geo(geo_id)
         
         # if solution in df then load
         if 'id_route' not in instance_df.columns:
@@ -618,7 +633,7 @@ class Geodude(BaseModel):
         # ============================ # 
         # ==== optimization model ==== #
         # ============================ # 
-        model = mip.Model(name = 'clustering')
+        model = mip.Model(name = 'clustering', solver_name='gurobi')
         # Instance Parameters 
         # var declaration
         print('var declaration')

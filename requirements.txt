@@ -4,7 +4,7 @@ numpy==1.20.3
 pandas==1.2.4
 python-dateutil==2.8.1
 pytz==2021.1
-Shapely==1.7.1
+shapely==1.7.1
 six==1.16.0
 pydantic==1.8.2
 shapely==1.7.1
@@ -14,3 +14,5 @@ keplergl==0.2.2
 xgboost==1.4.2
 networkx==2.6.2    
 seaborn==0.11
+scikit-learn==0.24.2
+statsmodels==0.12.2

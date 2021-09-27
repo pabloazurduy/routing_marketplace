@@ -2,7 +2,6 @@ import unittest
 
 import pandas as pd
 import numpy as np
-from pandas.io.parsers import read_csv 
 from matching import Abra, BetaMarket, MarketplaceInstance, Clouder, MatchingSolution, MatchingSolutionResult
 from routing import City, RoutingInstance, RoutingSolution
 from constants import BETA_TEST
@@ -72,10 +71,16 @@ class MarketplaceTest(unittest.TestCase):
         beta_market = Abra.fit_betas_time_based(routing_solution=routing_solution, 
                                                 acceptance_time_df=acceptance_time_df)
 
+    def test_time_histogram(self):
+        instances_filenames      = glob.glob('instance_simulator/real_instances/instance_sol_2' + "*.csv")
+        time_instances_filenames = glob.glob('instance_simulator/real_instances/instance_sol_a' + "*.csv")        
+        pass
+
+
     def test_simulated_matching(self):
         city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
         # create a simulated marketplace 
-        market = MarketplaceInstance.build_simulated(num_clouders=150, 
+        market = MarketplaceInstance.build_simulated(num_clouders=400, 
                                                      city=city_inst, 
                                                      mean_beta_features = BetaMarket.default())
         # generate a routing solution
@@ -102,7 +107,7 @@ class MarketplaceTest(unittest.TestCase):
         routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
         
         # generate a simulated marketplace
-        market = MarketplaceInstance.build_simulated(num_clouders=150, 
+        market = MarketplaceInstance.build_simulated(num_clouders=400, 
                                                      city=city_inst, 
                                                      mean_beta_features = BetaMarket.default())
         matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
@@ -111,6 +116,20 @@ class MarketplaceTest(unittest.TestCase):
         # read file and re-generate MatchingSolution 
         matching_df = pd.read_csv('instance_simulator/matching_sim/matching_random_sim.csv')
         MatchingSolutionResult.from_df(matching_df, routing_solution=routing_solution)
+    
+    def test_abra_matching_raises(self):
+        # use a routing solution
+        city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
+        instances_filenames = glob.glob('instance_simulator/real_instances/instance_sol_2' + "*.csv")
+        instance_sol_df     = pd.concat(map(lambda file: pd.read_csv(file, sep=';'), instances_filenames))
+        routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
+
+        # generate a simulated marketplace
+        market = MarketplaceInstance.build_simulated(num_clouders=100, 
+                                                     city=city_inst, 
+                                                     mean_beta_features = BetaMarket.default())
+        with self.assertRaises(ValueError): 
+            matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
 
     def test_abra_acceptance_model_fit(self):
         # use a routing solution
@@ -121,7 +140,7 @@ class MarketplaceTest(unittest.TestCase):
         routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
 
         # generate a simulated marketplace
-        market = MarketplaceInstance.build_simulated(num_clouders=150, 
+        market = MarketplaceInstance.build_simulated(num_clouders=400, 
                                                      city=city_inst, 
                                                      mean_beta_features = BetaMarket.default())
         matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
@@ -140,7 +159,7 @@ class MarketplaceTest(unittest.TestCase):
         routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
 
         # generate a simulated marketplace
-        market = MarketplaceInstance.build_simulated(num_clouders=150, 
+        market = MarketplaceInstance.build_simulated(num_clouders=400, 
                                                      city=city_inst, 
                                                      mean_beta_features = BetaMarket.default())
         matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
@@ -163,7 +182,7 @@ class MarketplaceTest(unittest.TestCase):
         routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
 
         # generate a simulated marketplace
-        market = MarketplaceInstance.build_simulated(num_clouders=150, 
+        market = MarketplaceInstance.build_simulated(num_clouders=400, 
                                                      city=city_inst, 
                                                      mean_beta_features = BetaMarket.default())
         matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
@@ -186,7 +205,7 @@ class MarketplaceTest(unittest.TestCase):
         routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
 
         # generate a simulated marketplace
-        market = MarketplaceInstance.build_simulated(num_clouders=150, 
+        market = MarketplaceInstance.build_simulated(num_clouders=400, 
                                                      city=city_inst, 
                                                      mean_beta_features = BetaMarket.default())
         matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
