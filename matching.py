@@ -285,7 +285,6 @@ class MarketplaceInstance(BaseModel):
                 route.price = initial_price_by_node * route.ft_size * (1+ increasing_price_pct * (num_old_maches / increasing_price_it))
                 clouder = clouders_dict[pair[1]]
                 accepted_trip = random.random() < clouder.sim_route_acceptance_prob(route)
-                print(random.random())
                 # best_route_util  = clouder.sim_route_utility(clouder.best_route, detailed_dict =True)
                 # route_util       = clouder.sim_route_utility(route, detailed_dict =True)
                 # diff_util        = {key: best_route_util[key] - route_util[key] for key in route_util}
@@ -314,7 +313,7 @@ class MarketplaceInstance(BaseModel):
                     # if trip accepted we remove both from the matching
                     del routes_dict[route.id]
                     del clouders_dict[clouder.id]
-            print(f'{len(clouders_dict)} {len(routes_dict)} {len(match_history)} {clouder.sim_route_acceptance_prob(route)}')
+            #print(f'{len(clouders_dict)} {len(routes_dict)} {len(match_history)} {clouder.sim_route_acceptance_prob(route)}')
 
         solution = MatchingSolutionResult(matching_df = pd.DataFrame(match_result),
                                           routes = routes.routes_dict,
@@ -405,12 +404,12 @@ class Abra(BaseModel):
         x_df = train_df[train_df.columns.difference(['acceptance_time_min', 'id_route'])]
         model.fit(X = x_df , y = train_df['acceptance_time_min'] )
         
-        # To print OLS summary  
-        # from statsmodels.api import OLS
-        # result = OLS(train_df['acceptance_time_min'],x_df).fit_regularized('sqrt_lasso')
-        # with open('summary.txt', 'w') as fh:
-        #    fh.write(OLS(train_df['acceptance_time_min'],x_df).fit().summary().as_text())
-        # print(result.params)
+        #To print OLS summary  
+        from statsmodels.api import OLS
+        result = OLS(train_df['acceptance_time_min'],x_df).fit_regularized('sqrt_lasso')
+        with open('summary.txt', 'w') as fh:
+            fh.write(OLS(train_df['acceptance_time_min'],x_df).fit().summary().as_text())
+        print(result.params)
 
         beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}
         return BetaMarket(beta_dict=beta_dict)

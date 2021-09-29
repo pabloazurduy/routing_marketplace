@@ -12,8 +12,8 @@ if __name__ == "__main__":
                                                     city=city_inst, 
                                                     mean_beta_features = BetaMarket.default())
     # generate a routing solution
-    # instance_sol_df =    pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
-    instances_filenames = glob.glob('instance_simulator/real_instances/instance_sol_2' + "*.csv")
+    # instance_sol_df =    pd.read_csv('instances/instance_sol_2021-06-08.csv', sep=';')
+    instances_filenames = glob.glob('instances/instance_sol_2' + "*.csv")
     instance_sol_df     = pd.concat(map(lambda file: pd.read_csv(file, sep=';'), instances_filenames))
     routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
     

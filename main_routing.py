@@ -9,18 +9,18 @@ if __name__ == "__main__":
     
     # create solved instance 
     
-    instance_sol_df    = pd.read_csv('instance_simulator/real_instances/instance_sol_2021-06-08.csv', sep=';')
-    acceptance_time_df  = pd.read_csv('instance_simulator/real_instances/instance_sol_attributes2021-06-08.csv', sep=';')
+    instance_sol_df    = pd.read_csv('instances/instance_sol_2021-06-08.csv', sep=';')
+    acceptance_time_df  = pd.read_csv('instances/instance_sol_attributes2021-06-08.csv', sep=';')
     
     routing_instance = RoutingInstance.from_df(instance_sol_df)
     routing_solution = routing_instance.solution
     beta_market = BetaMarket.default() #Abra.fit_betas_time_based(routing_solution=routing_solution, acceptance_time_df=acceptance_time_df)
 
 
-    INSTANCES = ['instance_simulator/real_instances/instance_2021-05-13.csv',
-                 'instance_simulator/real_instances/instance_2021-05-24.csv',
-                 'instance_simulator/real_instances/instance_2021-05-26.csv',
-                 'instance_simulator/real_instances/instance_2021-06-08.csv'
+    INSTANCES = ['instances/instance_2021-05-13.csv',
+                 'instances/instance_2021-05-24.csv',
+                 'instances/instance_2021-05-26.csv',
+                 'instances/instance_2021-06-08.csv'
     ]
 
     for instance_path in INSTANCES:

@@ -1,66 +1,82 @@
                              OLS Regression Results                            
 ===============================================================================
-Dep. Variable:     acceptance_time_min   R-squared:                       1.000
-Model:                             OLS   Adj. R-squared:                    nan
-Method:                  Least Squares   F-statistic:                       nan
-Date:                 Sun, 19 Sep 2021   Prob (F-statistic):                nan
-Time:                         22:09:30   Log-Likelihood:                 480.33
-No. Observations:                   18   AIC:                            -924.7
-Df Residuals:                        0   BIC:                            -908.6
-Df Model:                           17                                         
+Dep. Variable:     acceptance_time_min   R-squared:                       0.382
+Model:                             OLS   Adj. R-squared:                  0.184
+Method:                  Least Squares   F-statistic:                     1.935
+Date:                 Tue, 28 Sep 2021   Prob (F-statistic):            0.00206
+Time:                         23:34:05   Log-Likelihood:                -1440.8
+No. Observations:                  183   AIC:                             2972.
+Df Residuals:                      138   BIC:                             3116.
+Df Model:                           44                                         
 Covariance Type:             nonrobust                                         
 =====================================================================================
                         coef    std err          t      P>|t|      [0.025      0.975]
 -------------------------------------------------------------------------------------
-ft_has_geo_10        68.6919        inf          0        nan         nan         nan
-ft_has_geo_11       -34.4455        inf         -0        nan         nan         nan
-ft_has_geo_12       -34.4455        inf         -0        nan         nan         nan
-ft_has_geo_13       -34.4455        inf         -0        nan         nan         nan
-ft_has_geo_17       -15.8273        inf         -0        nan         nan         nan
-ft_has_geo_18        72.0009        inf          0        nan         nan         nan
-ft_has_geo_2         47.6210        inf          0        nan         nan         nan
-ft_has_geo_20       -15.8273        inf         -0        nan         nan         nan
-ft_has_geo_21       -15.8273        inf         -0        nan         nan         nan
-ft_has_geo_27      -178.4212        inf         -0        nan         nan         nan
-ft_has_geo_29        47.6210        inf          0        nan         nan         nan
-ft_has_geo_3        178.4536        inf          0        nan         nan         nan
-ft_has_geo_30        68.6919        inf          0        nan         nan         nan
-ft_has_geo_31       178.4536        inf          0        nan         nan         nan
-ft_has_geo_32      -207.2516        inf         -0        nan         nan         nan
-ft_has_geo_34         2.0723        inf          0        nan         nan         nan
-ft_has_geo_36        11.4519        inf          0        nan         nan         nan
-ft_has_geo_37        47.6210        inf          0        nan         nan         nan
-ft_has_geo_38        11.4519        inf          0        nan         nan         nan
-ft_has_geo_39        68.6919        inf          0        nan         nan         nan
-ft_has_geo_40      -224.7075        inf         -0        nan         nan         nan
-ft_has_geo_42        68.6919        inf          0        nan         nan         nan
-ft_has_geo_43        72.0009        inf          0        nan         nan         nan
-ft_has_geo_45      -141.8663        inf         -0        nan         nan         nan
-ft_has_geo_46      -142.8750        inf         -0        nan         nan         nan
-ft_has_geo_47       178.4536        inf          0        nan         nan         nan
-ft_has_geo_48       135.9679        inf          0        nan         nan         nan
-ft_has_geo_49      -205.8217        inf         -0        nan         nan         nan
-ft_has_geo_5         68.6919        inf          0        nan         nan         nan
-ft_has_geo_50       -34.4455        inf         -0        nan         nan         nan
-ft_has_geo_51       101.5223        inf          0        nan         nan         nan
-ft_has_geo_6         11.4519        inf          0        nan         nan         nan
-ft_has_geo_7         68.6919        inf          0        nan         nan         nan
-ft_has_geo_8         11.4519        inf          0        nan         nan         nan
-ft_has_geo_9       -311.8643        inf         -0        nan         nan         nan
-ft_inter_geo_dist    31.9210        inf          0        nan         nan         nan
-ft_size              24.8889        inf          0        nan         nan         nan
-ft_size_drops       -24.9889        inf         -0        nan         nan         nan
-ft_size_geo         -78.3250        inf         -0        nan         nan         nan
-ft_size_pickups      49.8778        inf          0        nan         nan         nan
+ft_has_geo_0       -245.3428   1160.698     -0.211      0.833   -2540.396    2049.710
+ft_has_geo_1      -1.297e-11   2.43e-11     -0.533      0.595   -6.11e-11    3.51e-11
+ft_has_geo_10      -122.1652    503.562     -0.243      0.809   -1117.860     873.530
+ft_has_geo_11        98.6979    279.285      0.353      0.724    -453.534     650.930
+ft_has_geo_12        98.6979    279.285      0.353      0.724    -453.534     650.930
+ft_has_geo_13        98.6979    279.285      0.353      0.724    -453.534     650.930
+ft_has_geo_14       -45.4758    452.247     -0.101      0.920    -939.706     848.755
+ft_has_geo_15       424.8727    527.020      0.806      0.422    -617.205    1466.950
+ft_has_geo_16      7.756e-13   1.24e-12      0.627      0.532   -1.67e-12    3.22e-12
+ft_has_geo_17       151.2740    888.726      0.170      0.865   -1606.007    1908.555
+ft_has_geo_18      -314.6672    478.873     -0.657      0.512   -1261.545     632.211
+ft_has_geo_19      -2.06e-12   1.13e-12     -1.828      0.070   -4.29e-12    1.69e-13
+ft_has_geo_2        186.5823    360.340      0.518      0.605    -525.920     899.085
+ft_has_geo_20      -283.1123   1097.319     -0.258      0.797   -2452.845    1886.621
+ft_has_geo_21       442.3547    918.450      0.482      0.631   -1373.700    2258.409
+ft_has_geo_22        45.6570    748.054      0.061      0.951   -1433.472    1524.786
+ft_has_geo_23     -1.017e-12   6.32e-13     -1.609      0.110   -2.27e-12    2.33e-13
+ft_has_geo_24       128.0855   1124.858      0.114      0.910   -2096.101    2352.272
+ft_has_geo_25       470.8569    847.773      0.555      0.580   -1205.447    2147.160
+ft_has_geo_26       496.6799   1117.685      0.444      0.657   -1713.322    2706.682
+ft_has_geo_27       264.2002    484.276      0.546      0.586    -693.361    1221.761
+ft_has_geo_28      -263.9130    519.176     -0.508      0.612   -1290.482     762.656
+ft_has_geo_29      -593.8154    596.575     -0.995      0.321   -1773.424     585.793
+ft_has_geo_3         82.1118    499.992      0.164      0.870    -906.525    1070.748
+ft_has_geo_30      1400.6250    262.175      5.342      0.000     882.225    1919.025
+ft_has_geo_31      2858.9471    905.905      3.156      0.002    1067.697    4650.197
+ft_has_geo_32      -132.3429    253.137     -0.523      0.602    -632.872     368.186
+ft_has_geo_33       -15.7245    862.562     -0.018      0.985   -1721.271    1689.821
+ft_has_geo_34       -13.9181    284.698     -0.049      0.961    -576.853     549.017
+ft_has_geo_35      -195.7212    858.955     -0.228      0.820   -1894.136    1502.694
+ft_has_geo_36      -362.4392    811.400     -0.447      0.656   -1966.824    1241.945
+ft_has_geo_37       186.5823    360.340      0.518      0.605    -525.920     899.085
+ft_has_geo_38       215.3842    795.757      0.271      0.787   -1358.069    1788.837
+ft_has_geo_39      1400.6250    262.175      5.342      0.000     882.225    1919.025
+ft_has_geo_4        -14.8825    280.873     -0.053      0.958    -570.254     540.489
+ft_has_geo_40       308.4920    224.989      1.371      0.173    -136.380     753.364
+ft_has_geo_41       116.2608    928.363      0.125      0.901   -1719.396    1951.917
+ft_has_geo_42      1400.6250    262.175      5.342      0.000     882.225    1919.025
+ft_has_geo_43        50.9477    523.897      0.097      0.923    -984.956    1086.851
+ft_has_geo_44      -166.5503    444.149     -0.375      0.708   -1044.768     711.667
+ft_has_geo_45       510.5604    322.182      1.585      0.115    -126.491    1147.612
+ft_has_geo_46        40.1878    371.491      0.108      0.914    -694.362     774.738
+ft_has_geo_47     -2421.8286    584.178     -4.146      0.000   -3576.926   -1266.732
+ft_has_geo_48      -641.0499    638.788     -1.004      0.317   -1904.128     622.028
+ft_has_geo_49       105.6762    255.052      0.414      0.679    -398.640     609.992
+ft_has_geo_5       -279.6988    620.659     -0.451      0.653   -1506.931     947.533
+ft_has_geo_50        98.6979    279.285      0.353      0.724    -453.534     650.930
+ft_has_geo_51       363.0938    476.241      0.762      0.447    -578.578    1304.766
+ft_has_geo_6        300.9301    618.972      0.486      0.628    -922.965    1524.825
+ft_has_geo_7      -4599.3745    938.977     -4.898      0.000   -6456.018   -2742.731
+ft_has_geo_8        132.6367   1327.972      0.100      0.921   -2493.166    2758.440
+ft_has_geo_9      -1450.1346    431.488     -3.361      0.001   -2303.318    -596.951
+ft_inter_geo_dist  -471.3129    600.123     -0.785      0.434   -1657.938     715.312
+ft_size             -49.8658     14.527     -3.433      0.001     -78.590     -21.142
+ft_size_drops        55.5934     19.725      2.818      0.006      16.592      94.595
+ft_size_geo         316.8836    251.287      1.261      0.209    -179.987     813.754
+ft_size_pickups    -105.4592     33.219     -3.175      0.002    -171.143     -39.775
 ==============================================================================
-Omnibus:                        1.905   Durbin-Watson:                   0.393
-Prob(Omnibus):                  0.386   Jarque-Bera (JB):                0.930
-Skew:                          -0.555   Prob(JB):                        0.628
-Kurtosis:                       3.085   Cond. No.                     6.24e+04
+Omnibus:                      142.778   Durbin-Watson:                   1.840
+Prob(Omnibus):                  0.000   Jarque-Bera (JB):             1699.245
+Skew:                           2.865   Prob(JB):                         0.00
+Kurtosis:                      16.784   Cond. No.                     1.27e+16
 ==============================================================================
 
 Notes:
 [1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
-[2] The input rank is higher than the number of observations.
-[3] The condition number is large, 6.24e+04. This might indicate that there are
-strong multicollinearity or other numerical problems.
+[2] The smallest eigenvalue is 1.08e-27. This might indicate that there are
+strong multicollinearity problems or that the design matrix is singular.

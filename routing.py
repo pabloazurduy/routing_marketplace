@@ -76,7 +76,7 @@ class City(BaseModel):
 
     @classmethod
     def from_geojson(cls, geojson_file_path:str, name_city:Optional[str]=None, id:Optional[int]=None):
-        with open(geojson_file_path) as f:
+        with open(geojson_file_path, encoding="utf8") as f:
             geojson = json.load(f)
         
         geos = {}
@@ -88,6 +88,10 @@ class City(BaseModel):
                                 polygon = polygon)
 
         return cls(id=id, name_city = name_city, geos=geos)
+    
+    @classmethod
+    def SCL(cls):
+        return cls.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
     
     def get_geo_from_name(self, geo_name:str) -> Optional[Geo]:
         for geo in self.geos.values():
@@ -216,7 +220,7 @@ class Route(BaseModel):
     def ft_has_geo(self, geo_id:int) -> float:
         return 1.0 if geo_id in self.geos else 0
     
-    @cached_property
+    @cached_property 
     def nodes_dict(self):
         return {node.sid:node for node in self.nodes}
 
@@ -239,6 +243,13 @@ class Route(BaseModel):
     
     def has_node_sid(self, sid:str)-> bool:
         return sid in self.nodes_dict.keys()
+
+    def add_node(self, node:Node) -> None:
+        # delete all @cached_property to be recalculated again
+        cached_props = ['nodes_dict','centroid', 'geos', 'arc_list']
+        for prop in cached_props:
+            self.__dict__.pop(prop, None)    
+        self.nodes.append(node)
 
     def make_fake(self):
         raise NotImplemented('Not Implemented')
@@ -325,17 +336,19 @@ class RoutingSolution(BaseModel):
     
     @classmethod
     def from_df(cls, solved_instance_df:DataFrame, city:City):
-
-        warehouses_list = solved_instance_df[solved_instance_df['is_warehouse']].to_dict(orient='records')
+        # Validate if warehouses are unique
+        warehouse_df = solved_instance_df[solved_instance_df['is_warehouse']]
+        assert warehouse_df[['lat','lon']].duplicated().sum() == 0, 'Error in dataframe, duplicated warehouses coordinates, please check'
          
+        warehouses_list = warehouse_df.to_dict(orient='records')
         warehouses_dict:Dict[int, Node] = {}
         for wh_inst in warehouses_list:
             wh_id = wh_inst['pickup_warehouse_id']
             warehouses_dict[wh_id] = Node(id = wh_id,
-                                        lat = wh_inst['lat'],
-                                        lng = wh_inst['lon'],
-                                        geo_id = city.get_geo_id_from_latlong(wh_inst['lat'], wh_inst['lon']),
-                                        node_type = 'warehouse'
+                                          lat = wh_inst['lat'],
+                                          lng = wh_inst['lon'],
+                                          geo_id = city.get_geo_id_from_latlong(wh_inst['lat'], wh_inst['lon']),
+                                          node_type = 'warehouse'
                                         )
         
         route_solution_list: List[Route] = []
@@ -346,7 +359,7 @@ class RoutingSolution(BaseModel):
                                             ].to_dict(orient='records')        
             route = Route(id=id_route, nodes=list(), city = city)
             for drop_inst in drops_list:
-                route.nodes.append(Node(id = id_node,
+                route.add_node(Node(id = id_node,
                                         lat =drop_inst['lat'],
                                         lng =drop_inst['lon'],
                                         node_type = 'drop',
@@ -357,7 +370,8 @@ class RoutingSolution(BaseModel):
                                     )) 
 
                 if not route.has_node_sid(f"w{drop_inst['pickup_warehouse_id']}"):
-                    route.nodes.append(warehouses_dict[drop_inst['pickup_warehouse_id']])  
+                    # print(f"adding w{drop_inst['pickup_warehouse_id']}")
+                    route.add_node(warehouses_dict[drop_inst['pickup_warehouse_id']])  
                 id_node+=1
         
             route_solution_list.append(route)    
@@ -365,6 +379,7 @@ class RoutingSolution(BaseModel):
 
     @property
     def features_df(self)-> pd.DataFrame:
+        # TODO define this property based on a CONSTANT list of features 
         features = ['ft_size','ft_size_drops','ft_size_pickups','ft_size_geo','ft_inter_geo_dist']
         routes_feat_list:List[Dict[str, float]] = []
         for route in self.routes:
@@ -450,12 +465,10 @@ class RoutingSolution(BaseModel):
         out_map.save_to_html(file_name=file_name)
 
 
-
 # TODO change this for a pandera schema
 # https://pandera.readthedocs.io/en/stable/schema_models.html
 INSTANCE_DF_COLUMNS = ['store_id', 'lon', 'is_warehouse', 
                        'lat', 'pickup_warehouse_id']
-CITY_SCL = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
 
 class RoutingInstance(BaseModel):
     nodes : List[Node]
@@ -501,7 +514,7 @@ class RoutingInstance(BaseModel):
     
 
     @classmethod
-    def from_df(cls, instance_df = pd.DataFrame, city_inst:City = CITY_SCL, remove_unused_geos:bool = False):
+    def from_df(cls, instance_df = pd.DataFrame, city_inst:Optional[City] = None, remove_unused_geos:bool = False):
         """create an RoutingInstance based on a pandas dataframe with all the request and warehouse points
 
         Args:
@@ -510,7 +523,8 @@ class RoutingInstance(BaseModel):
         Returns:
             RoutingInstance: [description]
         """    
-
+        if city_inst is None:
+            city_inst = City.SCL()
         assert set(INSTANCE_DF_COLUMNS).issubset(set(instance_df.columns) ), 'instance dataframe is missing some columns'
 
         warehouses_list = instance_df[instance_df.is_warehouse].to_dict(orient='records')
