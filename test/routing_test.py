@@ -5,13 +5,18 @@ import pandas as pd
 import numpy as np 
 from datetime import date 
 from matching import BetaMarket
-from routing import City, Geodude, RoutingInstance, RoutingSolution, Node, Route
-from constants import BETA_INIT
+from routing import City, RoutingModel, RoutingInstance, RoutingSolution, Node, Route
+from constants import BETA_INIT, ROUTING_FEATURES
 import os 
 import glob
 from typing import List
 
 class RoutingTest(unittest.TestCase): 
+    def test_const(self):
+        self.assertTrue(set(ROUTING_FEATURES) <= set(BETA_INIT.keys()))
+        beta_market = BetaMarket.default()
+        self.assertTrue(set(ROUTING_FEATURES) <= set(beta_market.features))
+
     def test_create_simple_routing_instance(self):
         instance_df = pd.read_csv('instances/instance_2021-05-24.csv', sep=';')
         instance_df['req_date'] = np.where(~instance_df['is_warehouse'],  
@@ -81,11 +86,11 @@ class RoutingTest(unittest.TestCase):
         self.assertIsInstance(warm_start, RoutingSolution)
     
     #@unittest.skip("slow test")
-    def test_geodude(self):
+    def test_routing_model(self):
         instance_df = pd.read_csv('instances/instance_2021-05-13.csv', sep=';')
         routing_instance = RoutingInstance.from_df(instance_df)
-        geodude_inst = Geodude(routing_instance = routing_instance, beta_market = BetaMarket.default())
-        routing_solution = geodude_inst.solve(n_clusters = 25, max_time_min = 5 )
+        routing_model_inst = RoutingModel(routing_instance = routing_instance, beta_market = BetaMarket.default())
+        routing_solution = routing_model_inst.solve(n_clusters = 25, max_time_min = 5 )
         self.assertIsInstance(routing_solution, RoutingSolution)
 
     def test_build_beta_dict(self):

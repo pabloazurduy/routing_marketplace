@@ -18,3 +18,4 @@ class EnvTest(unittest.TestCase):
 
         selected = [i for i in I if x[i].x >= 0.99]
         print("selected items: {}".format(selected))
+    

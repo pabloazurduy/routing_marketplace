@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from shapely.geometry import LineString, Point, Polygon, shape
 from sklearn import cluster  # used in eval
 
-from constants import KEPLER_CONFIG, BETA_INIT, ROUTE_FEATURES
+from constants import KEPLER_CONFIG, BETA_INIT, ROUTING_FEATURES
 
 
 # city meta classes 
@@ -257,8 +257,8 @@ class Route(BaseModel):
     def centroid_distance(self, point:Point) -> float:
         return self.centroid.distance(point)
     
-    def get_features_dict(self, features:List[str] = ROUTE_FEATURES) -> Dict[str, float]:
-        feat_dict = { feat:getattr(self,feat) for feat in features if 'has_geo' not in feat }
+    def get_features_dict(self, features:List[str] = ROUTING_FEATURES) -> Dict[str, float]:
+        feat_dict = {feat:getattr(self,feat) for feat in features if 'has_geo' not in feat}
         feat_dict.update({feat:self.ft_has_geo(int(feat.split('_')[-1])) for feat in features if 'has_geo' in feat})
         return feat_dict 
 
@@ -634,12 +634,16 @@ class BetaMarket(BaseModel):
 
     @property
     def dict(self):
-        return self.beta_dict      
+        return self.beta_dict   
+
+    @property
+    def features(self) -> List[str]:
+        return list(self.beta_dict.keys())   
 
     def __getitem__(self, key):
         return self.beta_dict.__getitem__(key)  
 
-class Geodude(BaseModel):
+class RoutingModel(BaseModel):
     routing_instance:RoutingInstance
     beta_market:BetaMarket
 

@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 import numpy as np
-from matching import Abra, BetaMarket, MarketplaceInstance, Clouder, MatchingSolution, MatchingSolutionResult
+from matching import MatchingModel, BetaMarket, MarketplaceInstance, Clouder, MatchingSolution, MatchingSolutionResult
 from routing import City, RoutingInstance, RoutingSolution
 from constants import BETA_TEST
 import glob
@@ -40,20 +40,20 @@ class MarketplaceTest(unittest.TestCase):
     
         self.assertTrue(market_sim.is_fake)
 
-    def test_abra_time_based_beta(self):
+    def test_matching_time_based_beta(self):
         instance_sol_df =    pd.read_csv('instances/instance_sol_2021-06-08.csv', sep=';')
         acceptance_time_df = pd.read_csv('instances/instance_sol_attributes2021-06-08.csv', sep=';')
 
         routing_instance = RoutingInstance.from_df(instance_sol_df, remove_unused_geos=True)
         routing_solution = routing_instance.solution
 
-        beta_market = Abra.fit_betas_time_based(routing_solution=routing_solution, acceptance_time_df=acceptance_time_df)
+        beta_market = MatchingModel.fit_betas_time_based(routing_solution=routing_solution, acceptance_time_df=acceptance_time_df)
         self.assertIsInstance(beta_market, BetaMarket)
         for beta in beta_market.dict.keys():
             # print(f'{beta}, {beta_market.dict[beta]:0.4f}, {BETA_TEST[beta]:0.4f}')
             self.assertTrue(np.allclose(beta_market.dict[beta], BETA_TEST[beta]))
     
-    def test_multi_abra_beta(self):
+    def test_multi_matching_beta(self):
         instance_sol_df    = pd.read_csv('instances/consolidated_instance_sol.csv')
         acceptance_time_df = pd.read_csv('instances/consolidated_instance_sol_attributes.csv')
         
@@ -62,7 +62,7 @@ class MarketplaceTest(unittest.TestCase):
         city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
         routing_solution = RoutingSolution.from_df(instance_sol_df, city = city_inst)
 
-        beta_market = Abra.fit_betas_time_based(routing_solution=routing_solution, 
+        beta_market = MatchingModel.fit_betas_time_based(routing_solution=routing_solution, 
                                                 acceptance_time_df=acceptance_time_df)
         # This are assumptions that can be overlook, however shows us that the solution makes sense 
         # 1.  ft_inter_geo_dist > 0 It's less desirable a more spread route 
@@ -118,7 +118,7 @@ class MarketplaceTest(unittest.TestCase):
         matching_df = pd.read_csv('instance_simulator/matching_sim/matching_random_sim.csv')
         MatchingSolutionResult.from_df(matching_df, routing_solution=routing_solution)
     
-    def test_abra_matching_raises(self):
+    def test_matching_matching_raises(self):
         # use a routing solution
         city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
         instance_sol_df = pd.read_csv('instances/consolidated_instance_sol.csv')
@@ -131,7 +131,7 @@ class MarketplaceTest(unittest.TestCase):
         with self.assertRaises(ValueError): 
             matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
 
-    def test_abra_acceptance_model_fit(self):
+    def test_matching_acceptance_model_fit(self):
         # use a routing solution
         city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
         #instance_sol_df = pd.read_csv('instances/instance_sol_2021-06-08.csv', sep=';')
@@ -143,14 +143,14 @@ class MarketplaceTest(unittest.TestCase):
                                                      city=city_inst, 
                                                      mean_beta_features = BetaMarket.default())
         matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
-        abra = Abra()
-        abra.fit_acceptance_model(matching_random)
-        self.assertIsNotNone(abra.acceptance_model)
-        self.assertIsNotNone(abra.acceptance_model_route_features)
-        self.assertIsNotNone(abra.acceptance_model_clouder_features)
-        self.assertTrue(0<abra.acceptance_model_auc<1)
+        matching = MatchingModel()
+        matching.fit_acceptance_model(matching_random)
+        self.assertIsNotNone(matching.acceptance_model)
+        self.assertIsNotNone(matching.acceptance_model_route_features)
+        self.assertIsNotNone(matching.acceptance_model_clouder_features)
+        self.assertTrue(0<matching.acceptance_model_auc<1)
     
-    def test_abra_price_matrix(self):
+    def test_matching_price_matrix(self):
         # use a routing solution
         city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
         instance_sol_df = pd.read_csv('instances/consolidated_instance_sol.csv')
@@ -163,16 +163,16 @@ class MarketplaceTest(unittest.TestCase):
         matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
         
 
-        abra = Abra()
-        abra.fit_acceptance_model(matching_random)
+        matching = MatchingModel()
+        matching.fit_acceptance_model(matching_random)
         instance_sol_df = pd.read_csv('instances/instance_sol_2021-06-08.csv', sep=';')
-        routing_abra = RoutingSolution.from_df(instance_sol_df, city = city_inst)
-        price_matrix = abra.build_price_matrix(routing_abra, market=market, prob_reference=0.65)
-        # abra.build_price_matrix_plot(routing_abra, market=market, prob_reference=0.65)
+        routing_matching = RoutingSolution.from_df(instance_sol_df, city = city_inst)
+        price_matrix = matching.build_price_matrix(routing_matching, market=market, prob_reference=0.65)
+        # matching.build_price_matrix_plot(routing_matching, market=market, prob_reference=0.65)
         self.assertIsInstance(price_matrix, dict)
 
     
-    def test_abra_matching(self):
+    def test_matching_matching(self):
         # use a routing solution
         city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
         instance_sol_df = pd.read_csv('instances/consolidated_instance_sol.csv')
@@ -184,17 +184,17 @@ class MarketplaceTest(unittest.TestCase):
                                                      mean_beta_features = BetaMarket.default())
         matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
 
-        # build abra model
-        abra = Abra()
-        abra.fit_acceptance_model(matching_random)
+        # build matching model
+        matching = MatchingModel()
+        matching.fit_acceptance_model(matching_random)
         instance_sol_df = pd.read_csv('instances/instance_sol_2021-06-08.csv', sep=';')
-        routing_abra = RoutingSolution.from_df(instance_sol_df, city = city_inst)
-        match_solution = abra.make_matching(routing_abra, market=market, prob_reference=0.65)
+        routing_matching = RoutingSolution.from_df(instance_sol_df, city = city_inst)
+        match_solution = matching.make_matching(routing_matching, market=market, prob_reference=0.65)
         self.assertIsInstance(match_solution, MatchingSolution)
         self.assertTrue(match_solution.total_expected_cost >= 0)
-        self.assertTrue(len(match_solution.match) == len(routing_abra.routes))
+        self.assertTrue(len(match_solution.match) == len(routing_matching.routes))
     
-    def test_abra_matching_route_price_plot(self):
+    def test_matching_matching_route_price_plot(self):
         # use a routing solution
         city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
         instance_sol_df = pd.read_csv('instances/consolidated_instance_sol.csv')
@@ -206,14 +206,14 @@ class MarketplaceTest(unittest.TestCase):
                                                      mean_beta_features = BetaMarket.default())
         matching_random = market.make_simulated_matching(routes = routing_solution, method='random')
 
-        # build abra model
-        abra = Abra()
-        abra.fit_acceptance_model(matching_random)
+        # build matching model
+        matching = MatchingModel()
+        matching.fit_acceptance_model(matching_random)
         instance_sol_df = pd.read_csv('instances/instance_sol_2021-06-08.csv', sep=';')
-        routing_abra = RoutingSolution.from_df(instance_sol_df, city = city_inst)
+        routing_matching = RoutingSolution.from_df(instance_sol_df, city = city_inst)
         prices = []
         for prob in np.linspace(start=0.20, stop=0.8, num=10):
-            match_solution = abra.make_matching(routing_abra, market=market, prob_reference=prob)
+            match_solution = matching.make_matching(routing_matching, market=market, prob_reference=prob)
             price_list = [{'route_id':route_id, 'route_price':route_price, 'prob':prob} for route_id,route_price in match_solution.expected_price.items()]
             prices += price_list
             print(f'{prob = }, {match_solution.total_expected_cost = }')

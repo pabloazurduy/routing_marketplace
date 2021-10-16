@@ -54,7 +54,7 @@ BETA_INIT = {'ft_has_geo_0': -13.23296928541717,
             'ft_size_drops': -0.2931359991686975,
             'ft_size_geo': 21.18251395771597,
             'ft_size_pickups': 0.7903554279926084,
-            'ft_size':0  # THIS SHOULD BE DELETED ON GEODUDE
+            'ft_size':0  # THIS SHOULD BE DELETED ON RoutingModel
 }
 
 BETA_TEST = {'ft_has_geo_10': 58.44683804766834,
@@ -98,7 +98,20 @@ BETA_TEST = {'ft_has_geo_10': 58.44683804766834,
               'ft_size_pickups': 74.76666666542661
               }
 
-ROUTE_FEATURES = list(BETA_INIT.keys())
+ROUTING_FEATURES =  ['ft_has_geo_0', 'ft_has_geo_1', 'ft_has_geo_10', 'ft_has_geo_11', 'ft_has_geo_12', 
+                     'ft_has_geo_13', 'ft_has_geo_14', 'ft_has_geo_15', 'ft_has_geo_16', 'ft_has_geo_17', 
+                     'ft_has_geo_18', 'ft_has_geo_19', 'ft_has_geo_2', 'ft_has_geo_20', 'ft_has_geo_21', 
+                     'ft_has_geo_22', 'ft_has_geo_23', 'ft_has_geo_24', 'ft_has_geo_25', 'ft_has_geo_26', 
+                     'ft_has_geo_27', 'ft_has_geo_28', 'ft_has_geo_29', 'ft_has_geo_3', 'ft_has_geo_30', 
+                     'ft_has_geo_31', 'ft_has_geo_32', 'ft_has_geo_33', 'ft_has_geo_34', 'ft_has_geo_35', 
+                     'ft_has_geo_36', 'ft_has_geo_37', 'ft_has_geo_38', 'ft_has_geo_39', 'ft_has_geo_4', 
+                     'ft_has_geo_40', 'ft_has_geo_41', 'ft_has_geo_42', 'ft_has_geo_43', 'ft_has_geo_44', 
+                     'ft_has_geo_45', 'ft_has_geo_46', 'ft_has_geo_47', 'ft_has_geo_48', 'ft_has_geo_49', 
+                     'ft_has_geo_5', 'ft_has_geo_50', 'ft_has_geo_51', 'ft_has_geo_6', 'ft_has_geo_7', 
+                     'ft_has_geo_8', 'ft_has_geo_9',  
+                     'ft_inter_geo_dist','ft_size_drops', 'ft_size_geo', 'ft_size_pickups',  'ft_size'
+                    ]
+
 
 FEATURES_STAT_SAMPLE = {
     'linear_gral_features_util':   {'weight':0.20,'mean':-1732.120277,'std':1911.422243},

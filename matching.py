@@ -17,7 +17,7 @@ import networkx as nx
 import seaborn as sns
 
 from routing import City, Geo, Route, RoutingSolution, BetaMarket
-from constants import FEATURES_STAT_SAMPLE, ROUTE_FEATURES
+from constants import FEATURES_STAT_SAMPLE, ROUTING_FEATURES
 
 
 class ClouderSimParams(BaseModel):
@@ -172,7 +172,7 @@ class MatchingSolution(BaseModel):
 class MatchingSolutionResult(BaseModel):
     matching_df:pd.DataFrame # add clouder origin geo
     clouders: Dict[int, Clouder]
-    routes: Dict[int, Route] # route_id, Route 
+    routes: Dict[int, Route] # route_id, Route # TODO: this should be a RoutingSolution
     class Config:
         arbitrary_types_allowed = True
         keep_untouched = (cached_property,)
@@ -193,7 +193,7 @@ class MatchingSolutionResult(BaseModel):
             clouders[clouder['clouder_id']] = Clouder(id = clouder['clouder_id'], origin = geo)
         return cls(matching_df= matching_df, clouders=clouders, routes = routing_solution.routes_dict)
 
-    def get_master_df(self, routes_features:List[str] = ROUTE_FEATURES, clouder_features:List[str] = ['origin_distance'] )-> pd.DataFrame:
+    def get_master_df(self, routes_features:List[str] = ROUTING_FEATURES, clouder_features:List[str] = ['origin_distance'] )-> pd.DataFrame:
         master_df = self.matching_df[['route_id','clouder_id','clouder_origin','route_price','accepted_trip']].copy()
         feat_routes:List[Dict[str,float]] = []
         for route in self.routes.values():
@@ -340,7 +340,7 @@ class MarketplaceInstance(BaseModel):
             available_clouders = sorted_clouders
         return match                
 
-class Abra(BaseModel):
+class MatchingModel(BaseModel):
     # TODO separate this into AcceptanceModel class
     acceptance_model: Optional[xgb.Booster]
     acceptance_model_route_features: Optional[List[str]]
@@ -352,7 +352,7 @@ class Abra(BaseModel):
 
 
     def fit_acceptance_model(self, matching_result: MatchingSolutionResult, 
-                             route_features:List[str] = ROUTE_FEATURES, 
+                             route_features:List[str] = ROUTING_FEATURES, 
                              clouder_features:List[str] = ['origin_distance', 'route_price'],
                              ) -> None:
         master_df = matching_result.get_master_df(route_features, clouder_features)
