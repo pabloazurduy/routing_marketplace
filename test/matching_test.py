@@ -47,7 +47,9 @@ class MarketplaceTest(unittest.TestCase):
         routing_instance = RoutingInstance.from_df(instance_sol_df, remove_unused_geos=True)
         routing_solution = routing_instance.solution
 
-        beta_market = MatchingModel.fit_betas_time_based(routing_solution=routing_solution, acceptance_time_df=acceptance_time_df)
+        beta_market = MatchingModel.fit_betas_time_based(routing_solution=routing_solution, 
+                                                         acceptance_time_df=acceptance_time_df,
+                                                         features_list=list(BETA_TEST.keys()))
         self.assertIsInstance(beta_market, BetaMarket)
         for beta in beta_market.dict.keys():
             # print(f'{beta}, {beta_market.dict[beta]:0.4f}, {BETA_TEST[beta]:0.4f}')

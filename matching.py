@@ -172,7 +172,7 @@ class MatchingSolution(BaseModel):
 class MatchingSolutionResult(BaseModel):
     matching_df:pd.DataFrame # add clouder origin geo
     clouders: Dict[int, Clouder]
-    routes: Dict[int, Route] # route_id, Route # TODO: this should be a RoutingSolution
+    routing_solution: RoutingSolution 
     class Config:
         arbitrary_types_allowed = True
         keep_untouched = (cached_property,)
@@ -191,27 +191,19 @@ class MatchingSolutionResult(BaseModel):
         for clouder in matching_df[['clouder_id','clouder_origin']].drop_duplicates().to_dict('records'):
             geo = routing_solution.city.get_geo_from_name(clouder['clouder_origin'])
             clouders[clouder['clouder_id']] = Clouder(id = clouder['clouder_id'], origin = geo)
-        return cls(matching_df= matching_df, clouders=clouders, routes = routing_solution.routes_dict)
+        return cls(matching_df= matching_df, clouders=clouders, routing_solution = routing_solution)
 
     def get_master_df(self, routes_features:List[str] = ROUTING_FEATURES, clouder_features:List[str] = ['origin_distance'] )-> pd.DataFrame:
         master_df = self.matching_df[['route_id','clouder_id','clouder_origin','route_price','accepted_trip']].copy()
-        feat_routes:List[Dict[str,float]] = []
-        for route in self.routes.values():
-            feat_dict = route.get_features_dict(routes_features)
-            feat_dict['route_id'] = route.id 
-            feat_routes.append(feat_dict)
-        routes_features_df = pd.DataFrame(feat_routes)    
+        routes_features_df = self.routing_solution.features_df(routes_features)    
         master_df = pd.merge(master_df, routes_features_df, on='route_id', how='right')
         
         if 'origin_distance' in clouder_features:    
-            city = list(self.routes.values())[0].city # TODO add this as arg
-            
             origin_features:List[Dict[str,float]] = []
-            
-            for route in self.routes.values():
+            for route in self.routing_solution.routes:
                 geo_names = master_df[master_df['route_id'] == route.id]['clouder_origin'].unique()
                 for geo_name in geo_names:
-                    geo = city.get_geo_from_name(geo_name)
+                    geo = self.routing_solution.city.get_geo_from_name(geo_name)
                     distance = route.centroid_distance(geo.centroid)
                     origin_features.append({'route_id': route.id,
                                             'clouder_origin':geo_name,
@@ -316,7 +308,7 @@ class MarketplaceInstance(BaseModel):
             #print(f'{len(clouders_dict)} {len(routes_dict)} {len(match_history)} {clouder.sim_route_acceptance_prob(route)}')
 
         solution = MatchingSolutionResult(matching_df = pd.DataFrame(match_result),
-                                          routes = routes.routes_dict,
+                                          routing_solution = routes,
                                           clouders = self.clouders_dict)
         return solution
 
@@ -380,7 +372,7 @@ class MatchingModel(BaseModel):
     
     @staticmethod    
     def fit_betas_time_based(routing_solution:RoutingSolution, acceptance_time_df:pd.DataFrame, 
-                            time_cap_min:float = 60*2) -> BetaMarket:
+                            time_cap_min:float = 60*2, features_list:List[str] = ROUTING_FEATURES) -> BetaMarket:
 
         acceptance_time_df['acceptance_time_min'] =( pd.to_datetime(acceptance_time_df['route_acceptance_timestamp'])
                                                    - pd.to_datetime(acceptance_time_df['route_creation_timestamp'])
@@ -389,7 +381,7 @@ class MatchingModel(BaseModel):
         acceptance_time_df_filtered =  acceptance_time_df[acceptance_time_df['acceptance_time_min'] <time_cap_min]
                 
         sol_df = pd.DataFrame(acceptance_time_df_filtered[['id_route','acceptance_time_min']])        
-        features_df = routing_solution.features_df
+        features_df = routing_solution.features_df(features_list)
         train_df = pd.merge(left = sol_df, right = features_df, how='left', on ='id_route')
         model = linear_model.LinearRegression()
         #linear_model.LassoLars(alpha=.1)

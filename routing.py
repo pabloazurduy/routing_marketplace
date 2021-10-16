@@ -377,17 +377,13 @@ class RoutingSolution(BaseModel):
             route_solution_list.append(route)    
         return cls(routes=route_solution_list, city=city)
 
-    @property
-    def features_df(self)-> pd.DataFrame:
-        # TODO define this property based on a CONSTANT list of features 
-        features = ['ft_size','ft_size_drops','ft_size_pickups','ft_size_geo','ft_inter_geo_dist']
-        routes_feat_list:List[Dict[str, float]] = []
+    def features_df(self, features_list:List[str] = ROUTING_FEATURES)-> pd.DataFrame:
+        feat_routes:List[Dict[str,Union[float, int]]] = []
         for route in self.routes:
-            route_features = {feat:getattr(route, feat) for feat in features}
-            route_features.update({f'ft_has_geo_{geo_id}':route.ft_has_geo(geo_id) for geo_id in self.city.geos.keys()})
-            route_features['id_route'] = route.id 
-            routes_feat_list.append(route_features)
-        return pd.DataFrame(routes_feat_list)
+            feat_dict = route.get_features_dict(features_list)
+            feat_dict['id_route'] = route.id 
+            feat_routes.append(feat_dict)
+        return pd.DataFrame(feat_routes)
 
     @property
     def mip_has_geo(self) -> Dict[str, float]:
@@ -648,7 +644,8 @@ class RoutingModel(BaseModel):
     beta_market:BetaMarket
 
     def solve(self, max_time_min:int = 30, n_clusters:int = 25 ):
-        # max number of clusters ? TODO: there should be a Z* equivalent way of modeling this problem 
+        # TODO: there should be a Z* equivalent way of modeling this problem (avoiding n_clusters)
+        # TODO: use self.beta_market as features reference
         clusters = range(n_clusters)
         routing_instance = self.routing_instance
         beta_dict = self.beta_market.dict
