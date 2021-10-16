@@ -634,7 +634,11 @@ class BetaMarket(BaseModel):
 
     @property
     def dict(self):
-        return self.beta_dict        
+        return self.beta_dict      
+
+    def __getitem__(self, key):
+        return self.beta_dict.__getitem__(key)  
+
 class Geodude(BaseModel):
     routing_instance:RoutingInstance
     beta_market:BetaMarket

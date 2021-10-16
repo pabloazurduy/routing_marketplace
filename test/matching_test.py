@@ -50,7 +50,7 @@ class MarketplaceTest(unittest.TestCase):
         beta_market = Abra.fit_betas_time_based(routing_solution=routing_solution, acceptance_time_df=acceptance_time_df)
         self.assertIsInstance(beta_market, BetaMarket)
         for beta in beta_market.dict.keys():
-            #print(f'{beta}, {beta_market.dict[beta]:0.4f}, {BETA_INIT[beta]:0.4f}')
+            # print(f'{beta}, {beta_market.dict[beta]:0.4f}, {BETA_TEST[beta]:0.4f}')
             self.assertTrue(np.allclose(beta_market.dict[beta], BETA_TEST[beta]))
     
     def test_multi_abra_beta(self):
@@ -64,12 +64,20 @@ class MarketplaceTest(unittest.TestCase):
 
         beta_market = Abra.fit_betas_time_based(routing_solution=routing_solution, 
                                                 acceptance_time_df=acceptance_time_df)
-
-    def test_time_histogram(self):
-        instances_filenames      = glob.glob('instances/instance_sol_2' + "*.csv")
-        time_instances_filenames = glob.glob('instances/instance_sol_a' + "*.csv")        
-        pass
-
+        # This are assumptions that can be overlook, however shows us that the solution makes sense 
+        # 1.  ft_inter_geo_dist > 0 It's less desirable a more spread route 
+        # 2.  ft_size_drops     < 0 It's more desireable to have more points (that will increase the route $)
+        # 3.  ft_size_geo       > 0 It's less desirable to have more geos (this is a indication of)
+        # 4.  ft_size_pickups   > 0 It's less desirable more pickup points (more waiting time)
+        # - super far geos usually increase time
+        # - non-core geos are mix, some geos (probably with higher number of clouders) decrease time while 
+        # - for some other non-core geos the result is the opposite 
+        # - core geos (providencia, vitacura, las condes, ñuñoa, santiago(?)) usually had a time decrease (more desirable)
+        # soft test 
+        print(f'soft test {beta_market["ft_inter_geo_dist"]> 0 = }')
+        print(f'soft test {beta_market["ft_size_drops"]< 0 = }')
+        print(f'soft test {beta_market["ft_size_geo"]> 0 = }')
+        print(f'soft test {beta_market["ft_size_pickups"]> 0 = }')
 
     def test_simulated_matching(self):
         city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')

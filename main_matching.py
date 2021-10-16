@@ -7,6 +7,7 @@ from matching import BetaMarket, MarketplaceInstance
 
 if __name__ == "__main__":
     city_inst = City.from_geojson('instance_simulator/geo/region_metropolitana_de_santiago/all.geojson')
+    # geo_dict = {geo.id:geo.name for geo in city_inst.geos_list}
     # create a simulated marketplace 
     market = MarketplaceInstance.build_simulated(num_clouders=400, 
                                                     city=city_inst, 

@@ -386,23 +386,17 @@ class Abra(BaseModel):
                                                    - pd.to_datetime(acceptance_time_df['route_creation_timestamp'])
                                                 ).dt.total_seconds()/60 
         # data cap 
-        # acceptance_time_df['acceptance_time_min'] =  np.minimum(acceptance_time_df['acceptance_time_min'], time_cap_min)                                                       
-        
-        # exploration 
-        # acceptance_time_df['acceptance_time_hrs'] = acceptance_time_df['acceptance_time_min']/60
-        # acceptance_time_df[acceptance_time_df['acceptance_time_hrs'] <=7]['acceptance_time_hrs'].hist(bins=100)
-        # acceptance_time_df['acceptance_time_hrs'].hist(bins=100)
-        
-        sol_df = pd.DataFrame(acceptance_time_df[['id_route','acceptance_time_min']])        
+        acceptance_time_df_filtered =  acceptance_time_df[acceptance_time_df['acceptance_time_min'] <time_cap_min]
+                
+        sol_df = pd.DataFrame(acceptance_time_df_filtered[['id_route','acceptance_time_min']])        
         features_df = routing_solution.features_df
-
         train_df = pd.merge(left = sol_df, right = features_df, how='left', on ='id_route')
-
-        model = linear_model.Lasso(alpha=0.1)
+        model = linear_model.LinearRegression()
         #linear_model.LassoLars(alpha=.1)
         #linear_model.Ridge(alpha=.5)
-        x_df = train_df[train_df.columns.difference(['acceptance_time_min', 'id_route'])]
+        x_df = train_df[train_df.columns.difference(['acceptance_time_min', 'id_route','ft_size'])]
         model.fit(X = x_df , y = train_df['acceptance_time_min'] )
+        # beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}
         
         #To print OLS summary  
         from statsmodels.api import OLS
@@ -410,8 +404,7 @@ class Abra(BaseModel):
         with open('summary.txt', 'w') as fh:
             fh.write(OLS(train_df['acceptance_time_min'],x_df).fit().summary().as_text())
         print(result.params)
-
-        beta_dict = {col:model.coef_[i] for i,col in enumerate(x_df.columns)}
+        beta_dict = result.params.to_dict()
         return BetaMarket(beta_dict=beta_dict)
 
     def make_matching(self, routing_solution:RoutingSolution, market:MarketplaceInstance, 

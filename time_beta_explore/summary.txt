@@ -1,0 +1,82 @@
+                             OLS Regression Results                            
+===============================================================================
+Dep. Variable:     acceptance_time_min   R-squared:                       0.378
+Model:                             OLS   Adj. R-squared:                  0.145
+Method:                  Least Squares   F-statistic:                     1.627
+Date:                 Sat, 16 Oct 2021   Prob (F-statistic):             0.0204
+Time:                         13:53:13   Log-Likelihood:                -679.93
+No. Observations:                  163   AIC:                             1450.
+Df Residuals:                      118   BIC:                             1589.
+Df Model:                           44                                         
+Covariance Type:             nonrobust                                         
+==================================================================================================
+                                     coef    std err          t      P>|t|      [0.025      0.975]
+--------------------------------------------------------------------------------------------------
+ft_has_geo_alhué               -6.958e-13   1.78e-12     -0.390      0.697   -4.23e-12    2.84e-12
+ft_has_geo_buin                    6.1304     32.802      0.187      0.852     -58.826      71.087
+ft_has_geo_calera_de_tango        10.1532     21.501      0.472      0.638     -32.426      52.732
+ft_has_geo_cerrillos             -11.4349     12.453     -0.918      0.360     -36.096      13.226
+ft_has_geo_cerro_navia            -7.0842     13.625     -0.520      0.604     -34.065      19.897
+ft_has_geo_colina                -21.2643     11.538     -1.843      0.068     -44.112       1.584
+ft_has_geo_conchalí                2.1103     22.576      0.093      0.926     -42.595      46.816
+ft_has_geo_curacaví               60.7153     29.115      2.085      0.039       3.061     118.370
+ft_has_geo_el_bosque              -9.1792      4.308     -2.131      0.035     -17.710      -0.648
+ft_has_geo_el_monte               16.5190      7.722      2.139      0.034       1.228      31.810
+ft_has_geo_estación_central       34.1965     15.746      2.172      0.032       3.016      65.377
+ft_has_geo_huechuraba            -11.1302     24.713     -0.450      0.653     -60.068      37.807
+ft_has_geo_independencia         -10.8577     13.277     -0.818      0.415     -37.149      15.434
+ft_has_geo_isla_de_maipo          16.5190      7.722      2.139      0.034       1.228      31.810
+ft_has_geo_la_cisterna            -9.1792      4.308     -2.131      0.035     -17.710      -0.648
+ft_has_geo_la_florida              6.8839     16.431      0.419      0.676     -25.654      39.421
+ft_has_geo_la_granja              -9.6560     13.229     -0.730      0.467     -35.853      16.541
+ft_has_geo_la_pintana             -3.8664     12.114     -0.319      0.750     -27.856      20.123
+ft_has_geo_la_reina              -11.0021      8.975     -1.226      0.223     -28.776       6.771
+ft_has_geo_lampa                  33.3280     13.673      2.438      0.016       6.252      60.404
+ft_has_geo_las_condes            -12.7829     13.472     -0.949      0.345     -39.461      13.895
+ft_has_geo_lo_barnechea          -10.8769      7.159     -1.519      0.131     -25.054       3.300
+ft_has_geo_lo_espejo               0.6736     15.674      0.043      0.966     -30.365      31.712
+ft_has_geo_lo_prado               12.6829     15.862      0.800      0.426     -18.728      44.094
+ft_has_geo_macul                   7.3998     20.018      0.370      0.712     -32.241      47.041
+ft_has_geo_maipú                 -38.8392     19.451     -1.997      0.048     -77.358      -0.321
+ft_has_geo_maría_pinto           -13.7520     29.890     -0.460      0.646     -72.942      45.438
+ft_has_geo_melipilla              54.3684     30.532      1.781      0.078      -6.093     114.830
+ft_has_geo_padre_hurtado          11.7074     21.771      0.538      0.592     -31.405      54.820
+ft_has_geo_paine                   5.7035     26.689      0.214      0.831     -47.148      58.555
+ft_has_geo_pedro_aguirre_cerda    -9.1792      4.308     -2.131      0.035     -17.710      -0.648
+ft_has_geo_peñaflor               16.5190      7.722      2.139      0.034       1.228      31.810
+ft_has_geo_peñalolén             -39.5242     29.506     -1.340      0.183     -97.954      18.905
+ft_has_geo_pirque                 16.8671     24.568      0.687      0.494     -31.785      65.519
+ft_has_geo_providencia           -14.8965      6.713     -2.219      0.028     -28.189      -1.604
+ft_has_geo_pudahuel               10.8554     34.667      0.313      0.755     -57.795      79.506
+ft_has_geo_puente_alto           -15.5054     12.399     -1.251      0.214     -40.059       9.048
+ft_has_geo_quilicura              32.0369     22.565      1.420      0.158     -12.649      76.722
+ft_has_geo_quinta_normal         -31.8479     21.328     -1.493      0.138     -74.082      10.386
+ft_has_geo_recoleta              -10.8577     13.277     -0.818      0.415     -37.149      15.434
+ft_has_geo_renca                  11.3153     20.328      0.557      0.579     -28.940      51.571
+ft_has_geo_san_bernardo          -13.8978     19.085     -0.728      0.468     -51.692      23.896
+ft_has_geo_san_joaquín            -5.8770     12.793     -0.459      0.647     -31.211      19.457
+ft_has_geo_san_josé_de_maipo   -2.781e-15   5.53e-15     -0.503      0.616   -1.37e-14    8.16e-15
+ft_has_geo_san_miguel             -9.1792      4.308     -2.131      0.035     -17.710      -0.648
+ft_has_geo_san_pedro           -1.078e-15   2.52e-15     -0.428      0.669   -6.06e-15     3.9e-15
+ft_has_geo_san_ramón              -2.8022     12.783     -0.219      0.827     -28.116      22.512
+ft_has_geo_santiago               -0.1327      6.284     -0.021      0.983     -12.577      12.311
+ft_has_geo_talagante              16.5190      7.722      2.139      0.034       1.228      31.810
+ft_has_geo_tiltil                       0          0        nan        nan           0           0
+ft_has_geo_vitacura              -12.3507      7.380     -1.674      0.097     -26.965       2.263
+ft_has_geo_ñuñoa                 -15.1459      7.093     -2.135      0.035     -29.191      -1.101
+ft_inter_geo_dist                -50.6069     17.413     -2.906      0.004     -85.090     -16.124
+ft_size_drops                     -0.3807      0.936     -0.407      0.685      -2.233       1.472
+ft_size_drops_quad                 0.0019      0.020      0.097      0.923      -0.037       0.041
+ft_size_geo                       21.1017      7.199      2.931      0.004       6.846      35.357
+ft_size_pickups                    0.8197      1.369      0.599      0.551      -1.892       3.531
+==============================================================================
+Omnibus:                      104.604   Durbin-Watson:                   2.037
+Prob(Omnibus):                  0.000   Jarque-Bera (JB):              570.432
+Skew:                           2.464   Prob(JB):                    1.36e-124
+Kurtosis:                      10.727   Cond. No.                     1.10e+16
+==============================================================================
+
+Notes:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
+[2] The smallest eigenvalue is 3.58e-25. This might indicate that there are
+strong multicollinearity problems or that the design matrix is singular.
